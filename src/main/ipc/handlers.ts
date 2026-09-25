@@ -116,7 +116,27 @@ export function registerIpc(deps: IpcDeps): { status: () => AppStatusDto } {
     const file = picked.filePaths[0]
     if (picked.canceled || !file) return null
     const row = await models.importFile(file)
-    return { modelId: row.id, displayName: row.displayName, sizeBytes: row.fileSizeBytes, active: false }
+    return {
+      modelId: row.id,
+      catalogKey: row.catalogKey,
+      displayName: row.displayName,
+      friendlyName: null,
+      sizeBytes: row.fileSizeBytes,
+      filePath: row.filePath,
+      location: 'app' as const,
+      active: row.id === llm.activeModelId
+    }
+  })
+  handle('models:adopt', async ({ key }) => {
+    auth.requireTeacher()
+    await models.adopt(key)
+    return models.overview()
+  })
+  handle('models:remove', async ({ modelId }) => {
+    auth.requireTeacher()
+    const { keptFile } = await models.remove(modelId)
+    sendEvent(deps.getWindow(), 'app:onStatus', status())
+    return { overview: await models.overview(), keptFile }
   })
   handle('models:test', ({ modelId }) => teacher(() => models.test(modelId)))
   handle('models:activate', async ({ modelId }) => {

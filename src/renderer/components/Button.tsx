@@ -70,7 +70,7 @@ export function IconButton({ label, children, tone = 'default', className = '', 
       aria-label={label}
       title={label}
       className={[
-        'inline-flex h-14 w-14 items-center justify-center rounded-pill transition-colors duration-200 ease-brand',
+        'inline-flex h-14 w-14 items-center justify-center rounded-pill transition-colors duration-200 ease-brand disabled:cursor-not-allowed disabled:opacity-40',
         tone === 'default' ? 'text-ink-muted hover:bg-surface-2 hover:text-ink' : 'text-white hover:bg-white/15',
         className
       ].join(' ')}

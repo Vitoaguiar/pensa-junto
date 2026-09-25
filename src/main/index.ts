@@ -4,6 +4,7 @@ import { openDatabase, type DbHandle } from './db/connection'
 import { createRepositories } from './db/repositories'
 import { seedBaseline, seedDemo } from './db/seed'
 import { registerIpc, sendEvent } from './ipc/handlers'
+import { formatBenchmark, runBenchmark } from './llm/benchmark'
 import { LlmService } from './llm/llmService'
 import { ModelManager } from './llm/modelManager'
 import { NodeLlamaEngine } from './llm/nodeLlamaEngine'
@@ -90,7 +91,11 @@ async function start(): Promise<void> {
   seedBaseline(dbHandle, repos)
   if (isDev || process.env.PENSA_JUNTO_DEMO === '1') seedDemo(repos)
 
-  llm = new LlmService(new NodeLlamaEngine(), repos)
+  // Simulação de PC fraco (também vale no app normal): PENSA_JUNTO_THREADS=2, PENSA_JUNTO_GPU=off.
+  const threads = Number(process.env.PENSA_JUNTO_THREADS) || undefined
+  const gpuOff = process.env.PENSA_JUNTO_GPU === 'off'
+  const engine = new NodeLlamaEngine({ threads, gpu: !gpuOff, verboseLogs: process.env.PENSA_JUNTO_LLAMA_LOGS === '1' })
+  llm = new LlmService(engine, repos)
   const auth = new AuthService(repos)
   const students = new StudentsService(repos, !isDev)
   const learning = new LearningService(repos, llm, (requestId, event) =>
@@ -99,6 +104,26 @@ async function start(): Promise<void> {
   const models = new ModelManager(repos, llm, path.join(userData, 'models'), (p) =>
     sendEvent(mainWindow, 'models:onProgress', p)
   )
+
+  // Benchmark: mede cada modelo instalado neste computador, grava benchmark.json e fecha.
+  if (process.env.PENSA_JUNTO_BENCH === '1') {
+    const modelsEnv = process.env.PENSA_JUNTO_BENCH_MODELS ?? 'all'
+    const report = await runBenchmark(
+      { repos, llm, engineInfo: () => engine.info(), version: app.getVersion(), log: (line) => console.log(line) },
+      {
+        n: Math.max(1, Math.min(50, Number(process.env.PENSA_JUNTO_BENCH_N) || 10)),
+        models: modelsEnv === 'all' || modelsEnv === 'active' ? modelsEnv : modelsEnv.split(','),
+        simulation: { threads: threads ?? null, gpu: gpuOff ? 'off' : 'auto' }
+      }
+    )
+    const file = path.join(userData, 'benchmark.json')
+    await import('node:fs').then((fs) => fs.promises.writeFile(file, JSON.stringify(report, null, 2)))
+    console.log(formatBenchmark(report))
+    console.log(`Relatório completo: ${file}`)
+    await llm.dispose()
+    app.exit(0)
+    return
+  }
 
   // Autoteste (suporte técnico): carrega o modelo ativo, gera um enunciado, grava selftest.json e fecha.
   if (process.env.PENSA_JUNTO_SELFTEST === '1') {

@@ -35,6 +35,8 @@ export const ipcSchemas = {
   'models:download': z.object({ key: z.string().max(40) }),
   'models:cancelDownload': z.object({ key: z.string().max(40) }),
   'models:import': none,
+  'models:adopt': z.object({ key: z.string().max(40) }),
+  'models:remove': z.object({ modelId: id }),
   'models:test': z.object({ modelId: id }),
   'models:activate': z.object({ modelId: id }),
   'models:useBasicMode': none,

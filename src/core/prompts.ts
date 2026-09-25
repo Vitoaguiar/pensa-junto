@@ -14,30 +14,39 @@ const joinNumbers = (numbers: readonly number[]) =>
 export function buildStatementPrompt(
   q: Pick<GeneratedQuestion, 'numbers' | 'meaning' | 'theme' | 'fallbackStatement'>
 ): ChatMessage[] {
+  // Ordem pensada para o cache do modelo: tudo que é FIXO vem antes (regras e exemplo) e o que muda
+  // (números, situação, tema, rascunho) vem só na última mensagem. Assim o llama.cpp reaproveita o
+  // começo do prompt entre pedidos e tentativas, o que faz muita diferença em PCs fracos.
   const system = [
     'Você cria problemas de matemática para crianças do 3º ano do ensino fundamental no Brasil.',
     'Regras:',
     '- Frases curtas e palavras simples. No máximo 3 frases.',
-    `- Use EXATAMENTE estes números, escritos com algarismos: ${joinNumbers(q.numbers)}.`,
+    '- Use EXATAMENTE os números do pedido, escritos com algarismos.',
     '- Não use nenhum outro número.',
-    `- A situação deve representar: ${q.meaning}.`,
+    '- A situação deve representar o significado pedido.',
     '- Mantenha quem faz o quê e a ordem dos números do rascunho.',
     '- Termine com uma pergunta.',
     '- NÃO escreva a conta, NÃO escreva a resposta.',
-    '- Responda somente com o enunciado.',
-    `Tema: ${q.theme.label}`
+    '- Responda somente com o enunciado.'
   ].join('\n')
   // Modelos pequenos esquecem a pergunta final; por isso ela vai escrita, para ser copiada.
-  const ask = (draft: string) => {
+  const ask = (numbers: readonly number[], meaning: string, theme: string, draft: string) => {
     const question = draft.split(/(?<=[.!])\s+/).pop() ?? draft
-    return `Rascunho: ${draft}\nReescreva com suas palavras, deixando o problema mais gostoso de ler. Termine com esta pergunta: ${question}`
+    return [
+      `Números: ${joinNumbers(numbers)}. Situação: ${meaning}. Tema: ${theme}.`,
+      `Rascunho: ${draft}`,
+      `Reescreva com suas palavras, deixando o problema mais gostoso de ler. Termine com esta pergunta: ${question}`
+    ].join('\n')
   }
   return [
     { role: 'system', content: system },
     // Exemplo curto de reescrita: muda as palavras, mantém números, papéis, ordem e a pergunta.
-    { role: 'user', content: ask('Lia tinha 12 balões. Deu 5 para o irmão. Com quantos balões Lia ficou?') },
+    {
+      role: 'user',
+      content: ask([12, 5], 'retirar', 'parque', 'Lia tinha 12 balões. Deu 5 para o irmão. Com quantos balões Lia ficou?')
+    },
     { role: 'assistant', content: 'No parque, Lia estava com 12 balões coloridos. Ela deu 5 para o irmão. Com quantos balões Lia ficou?' },
-    { role: 'user', content: ask(q.fallbackStatement) }
+    { role: 'user', content: ask(q.numbers, q.meaning, q.theme.label, q.fallbackStatement) }
   ]
 }
 
@@ -56,19 +65,21 @@ export interface TutorContext {
 }
 
 export function buildTutorSystem(ctx: TutorContext): string {
+  // Regras fixas primeiro (reaproveitadas pelo cache do modelo); dados desta questão no fim,
+  // e o que muda a cada pedido (tentativa e nível) por último.
   return [
     'Você é um tutor paciente e animado de uma criança do 3º ano.',
-    `Problema: "${ctx.statement}"`,
-    `Resposta correta (SEGREDO — NUNCA diga, nem indiretamente): ${formatAnswer(ctx.answer)}`,
-    `Passos da resolução: ${ctx.steps.join(' ')}`,
-    `Última tentativa da criança: ${ctx.lastAttempt ? formatAnswer(ctx.lastAttempt) : 'nenhuma'}`,
-    `Nível da ajuda: ${HINT_LEVELS[ctx.hintLevel]}`,
     'Regras:',
     '- NUNCA diga o resultado final nem faça a conta inteira.',
     '- Faça UMA pergunta curta por vez. Máximo 2 frases.',
     '- Se a criança errou, não diga "errado"; ajude a descobrir onde a conta mudou.',
     '- Fale só de matemática. Se ela falar de outro assunto, volte gentilmente para o problema.',
-    '- Português do Brasil, palavras simples.'
+    '- Português do Brasil, palavras simples.',
+    `Problema: "${ctx.statement}"`,
+    `Resposta correta (SEGREDO — NUNCA diga, nem indiretamente): ${formatAnswer(ctx.answer)}`,
+    `Passos da resolução: ${ctx.steps.join(' ')}`,
+    `Última tentativa da criança: ${ctx.lastAttempt ? formatAnswer(ctx.lastAttempt) : 'nenhuma'}`,
+    `Nível da ajuda: ${HINT_LEVELS[ctx.hintLevel]}`
   ].join('\n')
 }
 

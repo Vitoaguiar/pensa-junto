@@ -158,3 +158,25 @@ describe('tutor (retry e fallback)', () => {
     expect(r.text).toBe('Pense nas unidades. Quanto é 7 - 5?')
   })
 })
+
+describe('orçamento de tempo', () => {
+  const answer: Answer = { kind: 'integer', value: 222 }
+  it('com um motor lento que ignora o cancelamento, a criança recebe o texto pronto no prazo', async () => {
+    // Simula a CPU fraca: o motor só devolve depois de 2 s, mesmo cancelado.
+    const slow: TextGenerator = { generate: () => new Promise((resolve) => setTimeout(() => resolve('Quanto é 7 - 5?'), 2000)) }
+    const t0 = Date.now()
+    const r = await runTutor(slow, {
+      kind: 'hint',
+      messages: [],
+      temperature: 0.4,
+      maxTokens: 50,
+      timeoutMs: 150,
+      totalTimeoutMs: 300,
+      validate: (raw) => validateTutorText(raw, { answer, operands: [347, 125] }),
+      fallback: () => 'Comece pelas unidades: quanto é 7 - 5?'
+    })
+    expect(Date.now() - t0).toBeLessThan(600)
+    expect(r).toMatchObject({ source: 'fallback', fellBack: true })
+    expect(r.problems).toContain('tempo esgotado')
+  })
+})

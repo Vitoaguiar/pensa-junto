@@ -1,21 +1,33 @@
 import {
   ArrowRight,
+  Check,
   CheckCircle2,
   Cpu,
   Download,
   FlaskConical,
   HardDrive,
-  Info,
+  LoaderCircle,
   RefreshCw,
+  Search,
+  ShieldCheck,
   Sparkles,
+  Trash2,
   TriangleAlert,
   Upload,
   X
 } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import type { CatalogModelDto, DownloadProgressDto, ModelsOverviewDto, ModelTestResultDto } from '@shared/types'
-import { Button } from '../components/Button'
+import type {
+  CatalogModelDto,
+  DownloadProgressDto,
+  FoundModelDto,
+  InstalledModelDto,
+  ModelsOverviewDto,
+  ModelTestResultDto
+} from '@shared/types'
+import { Button, IconButton } from '../components/Button'
+import { Modal } from '../components/Feedback'
 import { Card, Chip } from '../components/Card'
 import { AdultPage, PageTitle, Stepper, TeacherGate } from '../components/Layout'
 import { call, errorMessage, onEvent } from '../lib/api'
@@ -56,6 +68,7 @@ export function ModelSetupPanel() {
   const [progress, setProgress] = useState<Record<string, DownloadProgressDto>>({})
   const [tests, setTests] = useState<Record<string, ModelTestResultDto>>({})
   const [busy, setBusy] = useState<string | null>(null)
+  const [removing, setRemoving] = useState<InstalledModelDto | null>(null)
 
   const reload = useCallback(async () => {
     try {
@@ -84,37 +97,60 @@ export function ModelSetupPanel() {
     }
   }
 
-  const download = (key: string) =>
-    run(`dl:${key}`, async () => setOverview(await call('models:download', { key })))
+  const refreshStatus = async () => setStatus(await call('app:status'))
+  const download = (key: string) => run(`dl:${key}`, async () => setOverview(await call('models:download', { key })))
   const cancel = (key: string) => run(`cancel:${key}`, async () => setOverview(await call('models:cancelDownload', { key })))
   const test = (modelId: string) =>
     run(`test:${modelId}`, async () => {
       const result = await call('models:test', { modelId })
       setTests((t) => ({ ...t, [modelId]: result }))
     })
-  const activate = (modelId: string) =>
-    run(`use:${modelId}`, async () => {
-      setOverview(await call('models:activate', { modelId }))
-      setStatus(await call('app:status'))
-      toast('Pronto! O app vai usar este modelo.', 'success')
+  const activate = (m: InstalledModelDto) =>
+    run(`use:${m.modelId}`, async () => {
+      setOverview(await call('models:activate', { modelId: m.modelId }))
+      await refreshStatus()
+      toast(`Pronto! O app vai usar o modelo ${m.friendlyName ?? m.displayName}.`, 'success')
+    })
+  const basicMode = () =>
+    run('basic', async () => {
+      setOverview(await call('models:useBasicMode'))
+      await refreshStatus()
+      toast('O app vai usar só os textos prontos (modo básico).', 'success')
+    })
+  const adopt = (key: string) =>
+    run(`adopt:${key}`, async () => {
+      setOverview(await call('models:adopt', { key }))
+      toast('Arquivo conferido e adicionado. Agora é só escolher o modelo.', 'success')
+    })
+  const remove = (m: InstalledModelDto) =>
+    run(`remove:${m.modelId}`, async () => {
+      const result = await call('models:remove', { modelId: m.modelId })
+      setOverview(result.overview)
+      setTests((t) => {
+        const next = { ...t }
+        delete next[m.modelId]
+        return next
+      })
+      await refreshStatus()
+      toast(
+        result.keptFile ? 'Modelo removido do app. O arquivo continua na pasta onde estava.' : 'Modelo removido e espaço liberado.',
+        'success'
+      )
+      setRemoving(null)
     })
   const importFile = () =>
     run('import', async () => {
       const imported = await call('models:import')
       if (imported) {
-        toast(`Modelo "${imported.displayName}" importado.`, 'success')
+        toast(`Modelo "${imported.displayName}" importado. Escolha-o em "Modelos neste computador".`, 'success')
         await reload()
       }
-    })
-  const basicMode = () =>
-    run('basic', async () => {
-      setOverview(await call('models:useBasicMode'))
-      setStatus(await call('app:status'))
     })
 
   const ramGb = overview ? Math.round(overview.totalRamBytes / 1024 ** 3) : null
   const importProgress = progress.import
   const importing = busy === 'import' && importProgress && importProgress.phase !== 'done'
+  const locked = busy !== null && (busy.startsWith('use:') || busy === 'basic' || busy.startsWith('remove:'))
 
   return (
     <>
@@ -123,7 +159,7 @@ export function ModelSetupPanel() {
         subtitle="O modelo é baixado uma única vez. Depois disso, tudo funciona sem internet."
       />
 
-      <div className="mb-6 flex flex-wrap items-center gap-3">
+      <div className="mb-8 flex flex-wrap items-center gap-3">
         {ramGb !== null && (
           <Chip>
             <Cpu aria-hidden className="h-4 w-4" /> Este computador tem <strong className="num text-ink">{ramGb} GB</strong> de memória
@@ -134,58 +170,62 @@ export function ModelSetupPanel() {
             <HardDrive aria-hidden className="h-4 w-4" /> <span className="num">{formatBytes(overview.freeDiskBytes)}</span> livres no disco
           </Chip>
         )}
-        {overview && !overview.activeModelId && (
-          <Chip className="bg-hint-soft text-hint-ink">
-            <Info aria-hidden className="h-4 w-4" /> Sem modelo, o app funciona em modo básico, com textos prontos.
-          </Chip>
-        )}
       </div>
 
-      <div className="grid gap-5 pt-4 lg:grid-cols-3">
-        {overview?.catalog.map((m) => (
-          <ModelCard
-            key={m.key}
-            model={m}
-            progress={progress[m.key] && m.state === 'downloading' ? progress[m.key]! : m.progress}
-            test={m.modelId ? tests[m.modelId] : undefined}
-            busy={busy}
-            onDownload={() => download(m.key)}
-            onCancel={() => cancel(m.key)}
-            onTest={() => m.modelId && test(m.modelId)}
-            onActivate={() => m.modelId && activate(m.modelId)}
-          />
-        ))}
-      </div>
+      {/* ---------- Modelos já no computador: escolher, testar, remover ---------- */}
+      <section aria-labelledby="installed-title" className="mb-12">
+        <h2 id="installed-title" className="text-[24px] font-bold text-ink">
+          Modelos neste computador
+        </h2>
+        <p className="mb-4 text-support text-ink-muted">Escolha qual o app usa. Dá para trocar quando quiser.</p>
 
-      {overview && overview.imported.length > 0 && (
-        <section className="mt-8">
-          <h2 className="mb-3 text-[22px] font-semibold text-ink">Modelos importados</h2>
-          <div className="flex flex-col gap-3">
-            {overview.imported.map((m) => (
-              <Card key={m.modelId} className="flex flex-wrap items-center gap-4">
-                <div className="min-w-0 flex-1">
-                  <p className="text-[18px] font-semibold text-ink">{m.displayName}</p>
-                  <p className="text-support text-ink-muted">{m.sizeBytes ? formatBytes(m.sizeBytes) : ''}</p>
-                  {tests[m.modelId] && <TestResult result={tests[m.modelId]!} />}
-                </div>
-                {m.active ? (
-                  <Chip className="bg-success-soft text-success-strong">
-                    <CheckCircle2 aria-hidden className="h-4 w-4" /> Em uso
-                  </Chip>
-                ) : null}
-                <Button variant="secondary" loading={busy === `test:${m.modelId}`} onClick={() => test(m.modelId)} icon={<FlaskConical aria-hidden className="h-5 w-5" />}>
-                  Testar
-                </Button>
-                {!m.active && (
-                  <Button loading={busy === `use:${m.modelId}`} onClick={() => activate(m.modelId)}>
-                    Usar este
-                  </Button>
-                )}
-              </Card>
+        {overview && (
+          <div role="radiogroup" aria-labelledby="installed-title" className="flex flex-col gap-3">
+            {overview.installed.map((m) => (
+              <InstalledRow
+                key={m.modelId}
+                model={m}
+                test={tests[m.modelId]}
+                busy={busy}
+                disabled={locked}
+                onUse={() => activate(m)}
+                onTest={() => test(m.modelId)}
+                onRemove={() => setRemoving(m)}
+              />
             ))}
+            {overview.found.map((f) => (
+              <FoundRow key={f.key} found={f} progress={progress[f.key]} busy={busy} onAdopt={() => adopt(f.key)} />
+            ))}
+            {overview.installed.length === 0 && overview.found.length === 0 && (
+              <p className="rounded-card border-2 border-dashed border-border px-6 py-5 text-support text-ink-muted">
+                Nenhum modelo neste computador ainda. Baixe um abaixo ou importe um arquivo .gguf.
+              </p>
+            )}
+            <BasicModeRow active={!overview.activeModelId} busy={busy === 'basic'} disabled={locked} onSelect={basicMode} />
           </div>
-        </section>
-      )}
+        )}
+      </section>
+
+      {/* ---------- Catálogo: baixar ---------- */}
+      <section aria-labelledby="catalog-title">
+        <h2 id="catalog-title" className="text-[24px] font-bold text-ink">
+          Baixar modelos
+        </h2>
+        <p className="mb-4 text-support text-ink-muted">Os modelos que já estão no computador aparecem marcados.</p>
+        <div className="grid gap-5 pt-4 lg:grid-cols-3">
+          {overview?.catalog.map((m) => (
+            <ModelCard
+              key={m.key}
+              model={m}
+              progress={progress[m.key] && (m.state === 'downloading' || m.state === 'found') ? progress[m.key]! : m.progress}
+              busy={busy}
+              onDownload={() => download(m.key)}
+              onCancel={() => cancel(m.key)}
+              onAdopt={() => adopt(m.key)}
+            />
+          ))}
+        </div>
+      </section>
 
       <Card className="mt-8 flex flex-wrap items-center gap-5">
         <span className="flex h-12 w-12 items-center justify-center rounded-[14px] bg-accent-soft text-accent-ink">
@@ -198,7 +238,9 @@ export function ModelSetupPanel() {
           </p>
           {importing && importProgress && (
             <p className="num mt-1 text-support text-ink-muted" role="status">
-              {importProgress.phase === 'verifying' ? 'Conferindo o arquivo…' : `Copiando… ${Math.round((importProgress.downloadedBytes / importProgress.totalBytes) * 100)}%`}
+              {importProgress.phase === 'verifying'
+                ? 'Conferindo o arquivo…'
+                : `Copiando… ${Math.round((importProgress.downloadedBytes / importProgress.totalBytes) * 100)}%`}
             </p>
           )}
         </div>
@@ -207,29 +249,204 @@ export function ModelSetupPanel() {
         </Button>
       </Card>
 
-      {overview?.activeModelId && (
-        <div className="mt-6 text-right">
-          <Button variant="ghost" loading={busy === 'basic'} onClick={basicMode}>
-            Usar o modo básico (sem modelo)
-          </Button>
-        </div>
-      )}
+      <RemoveModelModal model={removing} busy={!!removing && busy === `remove:${removing.modelId}`} onCancel={() => setRemoving(null)} onConfirm={remove} />
     </>
   )
+}
+
+/** Marcador de rádio (círculo), para deixar claro que só um modelo fica em uso. */
+function RadioMark({ checked, loading }: { checked: boolean; loading?: boolean }) {
+  return (
+    <span
+      aria-hidden
+      className={[
+        'flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-[3px] transition-colors',
+        checked ? 'border-success bg-success text-ink' : 'border-border bg-surface'
+      ].join(' ')}
+    >
+      {loading ? <LoaderCircle className="h-4 w-4 animate-spin text-ink-muted" /> : checked ? <Check className="h-4 w-4" strokeWidth={3} /> : null}
+    </span>
+  )
+}
+
+function InstalledRow(props: {
+  model: InstalledModelDto
+  test?: ModelTestResultDto
+  busy: string | null
+  disabled: boolean
+  onUse: () => void
+  onTest: () => void
+  onRemove: () => void
+}) {
+  const { model: m, busy } = props
+  const using = busy === `use:${m.modelId}`
+  const name = m.friendlyName ?? m.displayName
+  return (
+    <Card className={`flex flex-col gap-3 border-2 py-4 ${m.active ? 'border-success' : 'border-transparent'}`}>
+      <div className="flex flex-wrap items-center gap-4">
+        <button
+          type="button"
+          role="radio"
+          aria-checked={m.active}
+          aria-label={`Usar ${name}`}
+          disabled={m.active || props.disabled}
+          onClick={props.onUse}
+          className="flex min-w-0 flex-1 items-center gap-4 rounded-input text-left disabled:cursor-default"
+        >
+          <RadioMark checked={m.active} loading={using} />
+          <span className="min-w-0">
+            <span className="flex flex-wrap items-center gap-2">
+              <span className="text-[20px] font-semibold text-ink">{name}</span>
+              {m.active && <Chip className="bg-success-soft text-success-strong">Em uso</Chip>}
+            </span>
+            <span className="block truncate text-support text-ink-muted" title={m.filePath}>
+              {m.friendlyName ? `${m.displayName} · ` : ''}
+              {m.sizeBytes ? formatBytes(m.sizeBytes) : ''}
+              {m.location === 'external' ? ` · arquivo em ${shortDir(m.filePath)}` : ''}
+            </span>
+          </span>
+        </button>
+        {!m.active && (
+          <Button onClick={props.onUse} loading={using} disabled={props.disabled}>
+            Usar este
+          </Button>
+        )}
+        <Button
+          variant="secondary"
+          loading={busy === `test:${m.modelId}`}
+          disabled={props.disabled}
+          onClick={props.onTest}
+          icon={<FlaskConical aria-hidden className="h-5 w-5" />}
+        >
+          Testar
+        </Button>
+        <IconButton label={`Remover ${name}`} onClick={props.onRemove} disabled={props.disabled}>
+          <Trash2 aria-hidden className="h-5 w-5" />
+        </IconButton>
+      </div>
+      {props.test && <TestResult result={props.test} />}
+    </Card>
+  )
+}
+
+function FoundRow(props: { found: FoundModelDto; progress?: DownloadProgressDto; busy: string | null; onAdopt: () => void }) {
+  const { found: f } = props
+  const checking = props.busy === `adopt:${f.key}`
+  return (
+    <Card className="flex flex-wrap items-center gap-4 border-2 border-[#FFB54766] bg-hint-soft py-4">
+      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-hint text-ink">
+        <Search aria-hidden className="h-4 w-4" strokeWidth={2.5} />
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="text-[20px] font-semibold text-ink">
+          {f.friendlyName} <span className="text-support font-normal text-hint-ink">· encontrado neste computador</span>
+        </p>
+        <p className="truncate text-support text-hint-ink" title={f.filePath}>
+          {f.displayName} · {formatBytes(f.sizeBytes)} · {f.location === 'app' ? 'na pasta do app' : `em ${shortDir(f.filePath)}`}
+        </p>
+        {checking && (
+          <p className="mt-1 text-support font-medium text-hint-ink" role="status">
+            Conferindo se o arquivo está inteiro… (pode levar alguns segundos)
+          </p>
+        )}
+      </div>
+      <Button onClick={props.onAdopt} loading={checking} icon={<ShieldCheck aria-hidden className="h-5 w-5" />}>
+        Conferir e adicionar
+      </Button>
+    </Card>
+  )
+}
+
+function BasicModeRow(props: { active: boolean; busy: boolean; disabled: boolean; onSelect: () => void }) {
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={props.active}
+      disabled={props.active || props.disabled}
+      onClick={props.onSelect}
+      className={[
+        'flex items-center gap-4 rounded-card border-2 px-6 py-4 text-left transition-colors',
+        props.active ? 'border-success bg-surface' : 'border-dashed border-border hover:border-primary'
+      ].join(' ')}
+    >
+      <RadioMark checked={props.active} loading={props.busy} />
+      <span>
+        <span className="flex items-center gap-2 text-[18px] font-semibold text-ink">
+          Nenhum: modo básico {props.active && <Chip className="bg-success-soft text-success-strong">Em uso</Chip>}
+        </span>
+        <span className="block text-support text-ink-muted">Só os textos prontos: mais rápido e sempre correto, mas menos variado.</span>
+      </span>
+    </button>
+  )
+}
+
+function RemoveModelModal(props: {
+  model: InstalledModelDto | null
+  busy: boolean
+  onCancel: () => void
+  onConfirm: (m: InstalledModelDto) => void
+}) {
+  const m = props.model
+  return (
+    <Modal
+      open={!!m}
+      title="Remover modelo?"
+      onClose={props.onCancel}
+      footer={
+        <>
+          <Button variant="ghost" onClick={props.onCancel}>
+            Cancelar
+          </Button>
+          <Button variant="danger" loading={props.busy} onClick={() => m && props.onConfirm(m)} icon={<Trash2 aria-hidden className="h-5 w-5" />}>
+            Remover
+          </Button>
+        </>
+      }
+    >
+      {m && (
+        <div className="flex flex-col gap-3 text-body text-ink">
+          <p>
+            <strong>{m.friendlyName ?? m.displayName}</strong> ({m.displayName})
+          </p>
+          {m.location === 'app' ? (
+            <p>
+              O arquivo de <span className="num">{m.sizeBytes ? formatBytes(m.sizeBytes) : ''}</span> será apagado deste computador. Você pode
+              baixar de novo quando quiser.
+            </p>
+          ) : (
+            <p>
+              O app vai deixar de usar este modelo, mas o arquivo <strong>não</strong> será apagado: ele continua em{' '}
+              <span className="break-all">{m.filePath}</span>.
+            </p>
+          )}
+          {m.active && (
+            <p className="rounded-input bg-hint-soft px-4 py-3 text-hint-ink">
+              Este é o modelo em uso. Sem ele, o app passa a usar o modo básico até você escolher outro.
+            </p>
+          )}
+        </div>
+      )}
+    </Modal>
+  )
+}
+
+/** "C:\Users\...\Downloads" → "Downloads" (a pasta onde o arquivo está). */
+function shortDir(filePath: string): string {
+  const parts = filePath.split(/[\\/]/)
+  return parts.length >= 2 ? (parts[parts.length - 2] as string) : filePath
 }
 
 interface ModelCardProps {
   model: CatalogModelDto
   progress: DownloadProgressDto | null
-  test?: ModelTestResultDto
   busy: string | null
   onDownload: () => void
   onCancel: () => void
-  onTest: () => void
-  onActivate: () => void
+  onAdopt: () => void
 }
 
-function ModelCard({ model: m, progress, test, busy, onDownload, onCancel, onTest, onActivate }: ModelCardProps) {
+function ModelCard({ model: m, progress, busy, onDownload, onCancel, onAdopt }: ModelCardProps) {
   const pct = progress && progress.totalBytes ? Math.min(100, Math.round((progress.downloadedBytes / progress.totalBytes) * 100)) : 0
   return (
     <Card
@@ -303,18 +520,18 @@ function ModelCard({ model: m, progress, test, busy, onDownload, onCancel, onTes
           </>
         )}
         {m.state === 'ready' && (
+          <p className="flex items-center gap-2 rounded-input bg-success-soft px-4 py-3 text-support font-medium text-success-strong">
+            <CheckCircle2 aria-hidden className="h-5 w-5 shrink-0" /> Já está neste computador. Escolha em “Modelos neste computador”.
+          </p>
+        )}
+        {m.state === 'found' && (
           <>
-            {test && <TestResult result={test} />}
-            <div className="flex gap-3">
-              <Button variant="secondary" className="flex-1" loading={busy === `test:${m.modelId}`} onClick={onTest} icon={<FlaskConical aria-hidden className="h-5 w-5" />}>
-                Testar
-              </Button>
-              {!m.active && (
-                <Button className="flex-1" loading={busy === `use:${m.modelId}`} onClick={onActivate}>
-                  Usar este
-                </Button>
-              )}
-            </div>
+            <p className="rounded-input bg-hint-soft px-4 py-3 text-support text-hint-ink">
+              Encontramos este arquivo no computador. Conferimos se ele está inteiro antes de usar, sem baixar de novo.
+            </p>
+            <Button onClick={onAdopt} loading={busy === `adopt:${m.key}`} icon={<ShieldCheck aria-hidden className="h-5 w-5" />}>
+              Conferir e adicionar
+            </Button>
           </>
         )}
       </div>

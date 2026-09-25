@@ -1,7 +1,7 @@
 {
   "name": "pensa-junto",
   "productName": "Pensa Junto",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Tutor de matemática offline para o 3º ano, com modelo de linguagem local.",
   "main": "./out/main/index.js",
   "author": "Pensa Junto",
@@ -19,7 +19,8 @@
     "db:generate": "drizzle-kit generate",
     "dist:win": "electron-vite build && electron-builder --win",
     "dist:linux": "electron-vite build && electron-builder --linux",
-    "reset": "node scripts/reset.mjs"
+    "reset": "node scripts/reset.mjs",
+    "bench": "electron-vite build && node scripts/bench.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.117.1",

@@ -168,7 +168,8 @@ export interface StreamEventDto {
 
 // ---------- Modelos ----------
 
-export type ModelState = 'not_downloaded' | 'downloading' | 'ready' | 'error'
+/** "found" = o arquivo oficial já está neste computador (ex.: baixado antes), falta só conferir e usar. */
+export type ModelState = 'not_downloaded' | 'downloading' | 'ready' | 'found' | 'error'
 
 export interface DownloadProgressDto {
   key: string
@@ -197,11 +198,27 @@ export interface CatalogModelDto {
   progress: DownloadProgressDto | null
 }
 
-export interface ImportedModelDto {
+/** Modelo pronto para usar neste computador (baixado pelo app, importado ou encontrado). */
+export interface InstalledModelDto {
   modelId: string
+  catalogKey: string | null
   displayName: string
+  friendlyName: string | null
   sizeBytes: number | null
+  filePath: string
+  /** "app": arquivo na pasta do app (remover apaga o arquivo). "external": o app só aponta para ele. */
+  location: 'app' | 'external'
   active: boolean
+}
+
+/** Arquivo oficial do catálogo encontrado no computador, ainda não registrado no app. */
+export interface FoundModelDto {
+  key: string
+  displayName: string
+  friendlyName: string
+  filePath: string
+  sizeBytes: number
+  location: 'app' | 'external'
 }
 
 export interface ModelsOverviewDto {
@@ -211,7 +228,14 @@ export interface ModelsOverviewDto {
   activeModelId: string | null
   engine: EngineStateDto
   catalog: CatalogModelDto[]
-  imported: ImportedModelDto[]
+  installed: InstalledModelDto[]
+  found: FoundModelDto[]
+}
+
+export interface RemoveModelResultDto {
+  overview: ModelsOverviewDto
+  /** Arquivo que ficou no computador (quando estava fora da pasta do app). */
+  keptFile: string | null
 }
 
 export interface ModelTestResultDto {
@@ -224,6 +248,9 @@ export interface ModelTestResultDto {
 }
 
 export interface GenerationStatsDto {
+  modelId: string | null
+  /** Nome do modelo; null = modo básico (textos prontos, sem modelo). */
+  modelName: string | null
   kind: string
   total: number
   avgLatencyMs: number

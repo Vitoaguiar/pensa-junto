@@ -22,7 +22,7 @@ export type EngineState =
  * Pedidos da criança (foreground) passam na frente e interrompem a pré-geração em segundo plano.
  */
 export class LlmService {
-  private loadedModelId: string | null = null
+  private loadedModelId_: string | null = null
   private loading: Promise<boolean> | null = null
   private loadingId: string | null = null
   private lastError: { modelId: string; message: string } | null = null
@@ -40,14 +40,14 @@ export class LlmService {
 
   state(): EngineState {
     if (this.loadingId) return { state: 'loading', modelId: this.loadingId }
-    if (this.loadedModelId && this.engine.isReady()) return { state: 'ready', modelId: this.loadedModelId }
+    if (this.loadedModelId_ && this.engine.isReady()) return { state: 'ready', modelId: this.loadedModelId_ }
     if (this.lastError) return { state: 'error', ...this.lastError }
     return { state: 'none' }
   }
 
   /** Carrega um modelo (sem torná-lo ativo). */
   async loadModel(modelId: string): Promise<boolean> {
-    if (this.loadedModelId === modelId && this.engine.isReady()) return true
+    if (this.loadedModelId_ === modelId && this.engine.isReady()) return true
     if (this.loading && this.loadingId === modelId) return this.loading
     if (this.loading) await this.loading.catch(() => false)
     const row = this.repos.models.get(modelId)
@@ -61,11 +61,11 @@ export class LlmService {
         // Espera a geração em andamento terminar antes de trocar o modelo.
         this.running?.controller.abort()
         await this.engine.load(row.filePath)
-        this.loadedModelId = modelId
+        this.loadedModelId_ = modelId
         this.lastError = null
         return true
       } catch (err) {
-        this.loadedModelId = null
+        this.loadedModelId_ = null
         this.lastError = { modelId, message: err instanceof Error ? err.message : String(err) }
         return false
       } finally {
@@ -82,9 +82,21 @@ export class LlmService {
     return ok
   }
 
+  get loadedModelId(): string | null {
+    return this.loadedModelId_
+  }
+
+  /** Descarrega o modelo se for ele que está na memória (ex.: foi testado, mas não está em uso). */
+  async unloadIfLoaded(modelId: string): Promise<void> {
+    if (this.loadedModelId_ !== modelId) return
+    this.running?.controller.abort()
+    this.loadedModelId_ = null
+    await this.engine.unload()
+  }
+
   async deactivate(): Promise<void> {
     this.repos.settings.delete('active_model_id')
-    this.loadedModelId = null
+    this.loadedModelId_ = null
     await this.engine.unload()
   }
 

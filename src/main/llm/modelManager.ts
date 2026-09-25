@@ -9,13 +9,16 @@ import { statementPrefixProblem, validateStatement } from '@core/validation'
 import type {
   CatalogModelDto,
   DownloadProgressDto,
+  FoundModelDto,
+  InstalledModelDto,
   ModelsOverviewDto,
   ModelTestResultDto
 } from '@shared/types'
 import type { Repositories } from '../db/repositories'
 import type { LlmModelRow } from '../db/schema'
 import type { LlmService } from './llmService'
-import { findCatalogModel, MODEL_CATALOG, recommendModel, type CatalogModel } from './modelCatalog'
+import { MODEL_CATALOG, recommendModel, type CatalogModel } from './modelCatalog'
+import { defaultSearchDirs, discoverCatalogFiles, isInside, type SearchDir } from './modelDiscovery'
 
 type Downloader = Awaited<ReturnType<(typeof import('node-llama-cpp'))['createModelDownloader']>>
 
@@ -30,17 +33,52 @@ export class ModelManager {
   private progress = new Map<string, DownloadProgressDto>()
   private errors = new Map<string, string>()
 
+  private readonly searchDirs: SearchDir[]
+  private readonly catalog: readonly CatalogModel[]
+
   constructor(
     private readonly repos: Repositories,
-    private readonly llm: LlmService,
+    private readonly llm: Pick<LlmService, 'activeModelId' | 'state' | 'deactivate' | 'unloadIfLoaded' | 'loadModel' | 'generator' | 'activate'>,
     private readonly modelsDir: string,
-    private readonly emitProgress: (p: DownloadProgressDto) => void
+    private readonly emitProgress: (p: DownloadProgressDto) => void,
+    /** Para testes: outras pastas de busca e outro catálogo. */
+    options: { searchDirs?: SearchDir[]; catalog?: readonly CatalogModel[] } = {}
   ) {
     fs.mkdirSync(modelsDir, { recursive: true })
+    this.searchDirs = options.searchDirs ?? defaultSearchDirs(modelsDir)
+    this.catalog = options.catalog ?? MODEL_CATALOG
     // Downloads interrompidos (app fechado no meio) ficam como "retomáveis".
     for (const row of repos.models.list()) {
       if (row.status === 'downloading') repos.models.update(row.id, { status: 'error' })
     }
+  }
+
+  private findEntry(key: string): CatalogModel | undefined {
+    return this.catalog.find((m) => m.key === key)
+  }
+
+  /** Modelos prontos para usar: registrados como prontos e com o arquivo ainda no lugar. */
+  private installedRows(): LlmModelRow[] {
+    return this.repos.models.list().filter((r) => r.status === 'ready' && fs.existsSync(r.filePath))
+  }
+
+  /** Arquivos oficiais do catálogo encontrados no computador e ainda não registrados como prontos. */
+  async findExisting(): Promise<FoundModelDto[]> {
+    const installedKeys = new Set(this.installedRows().map((r) => r.catalogKey))
+    const pending = this.catalog.filter((m) => !installedKeys.has(m.key) && !this.downloads.has(m.key))
+    if (pending.length === 0) return []
+    const files = await discoverCatalogFiles(this.searchDirs, pending)
+    return files.map((f) => {
+      const entry = this.findEntry(f.key) as CatalogModel
+      return {
+        key: f.key,
+        displayName: entry.displayName,
+        friendlyName: entry.friendlyName,
+        filePath: f.filePath,
+        sizeBytes: f.sizeBytes,
+        location: isInside(this.modelsDir, f.filePath) ? 'app' : 'external'
+      }
+    })
   }
 
   async overview(): Promise<ModelsOverviewDto> {
@@ -48,13 +86,17 @@ export class ModelManager {
     const recommendedKey = recommendModel(totalRamBytes)
     const activeModelId = this.llm.activeModelId
     const rows = this.repos.models.list()
-    const catalog: CatalogModelDto[] = MODEL_CATALOG.map((entry) => {
+    const installedRows = this.installedRows()
+    const found = await this.findExisting()
+    const catalog: CatalogModelDto[] = this.catalog.map((entry) => {
       const row = rows.find((r) => r.catalogKey === entry.key)
+      const installed = installedRows.find((r) => r.catalogKey === entry.key)
       const downloading = this.downloads.has(entry.key)
       const error = this.errors.get(entry.key) ?? null
       let state: CatalogModelDto['state'] = 'not_downloaded'
       if (downloading) state = 'downloading'
-      else if (row?.status === 'ready' && fs.existsSync(row.filePath)) state = 'ready'
+      else if (installed) state = 'ready'
+      else if (found.some((f) => f.key === entry.key)) state = 'found'
       else if (error) state = 'error'
       return {
         key: entry.key,
@@ -67,21 +109,33 @@ export class ModelManager {
         recommended: entry.key === recommendedKey,
         fitsRam: totalRamBytes / 1024 ** 3 >= entry.minRamGb - 0.5,
         state,
-        resumable: !downloading && !!row && row.status !== 'ready',
-        modelId: row?.id ?? null,
-        active: !!row && row.id === activeModelId,
+        // Só dá para "continuar" se o arquivo parcial do download ainda existir.
+        resumable: !downloading && state === 'not_downloaded' && this.hasPartialDownload(entry),
+        modelId: installed?.id ?? row?.id ?? null,
+        active: !!installed && installed.id === activeModelId,
         error,
         progress: this.progress.get(entry.key) ?? null
       }
     })
-    const imported = rows
-      .filter((r) => r.source === 'imported' && !r.catalogKey && r.status === 'ready')
-      .map((r) => ({
+    const installed: InstalledModelDto[] = installedRows.map((r) => {
+      const entry = r.catalogKey ? this.findEntry(r.catalogKey) : undefined
+      return {
         modelId: r.id,
+        catalogKey: r.catalogKey,
         displayName: r.displayName,
+        friendlyName: entry?.friendlyName ?? null,
         sizeBytes: r.fileSizeBytes,
+        filePath: r.filePath,
+        location: isInside(this.modelsDir, r.filePath) ? 'app' : 'external',
         active: r.id === activeModelId
-      }))
+      }
+    })
+    // Ordem do catálogo (do mais leve ao maior); importados por último.
+    const order = (m: InstalledModelDto) => {
+      const i = this.catalog.findIndex((c) => c.key === m.catalogKey)
+      return i < 0 ? this.catalog.length : i
+    }
+    installed.sort((a, b) => order(a) - order(b))
     return {
       totalRamBytes,
       freeDiskBytes: await freeDiskBytes(this.modelsDir),
@@ -89,12 +143,97 @@ export class ModelManager {
       activeModelId,
       engine: this.llm.state(),
       catalog,
-      imported
+      installed,
+      found
     }
   }
 
+  private hasPartialDownload(entry: CatalogModel): boolean {
+    try {
+      return fs.readdirSync(this.modelsDir).some((f) => f.startsWith(entry.fileName) && f !== entry.fileName)
+    } catch {
+      return false
+    }
+  }
+
+  /**
+   * Usa um arquivo oficial encontrado no computador. Antes, confere o SHA-256: nome e tamanho iguais
+   * não garantem que o arquivo está inteiro. O caminho vem de uma nova busca feita aqui no main,
+   * nunca do renderer.
+   */
+  async adopt(key: string): Promise<void> {
+    const entry = this.findEntry(key)
+    if (!entry) throw new FriendlyError('Modelo desconhecido.')
+    const candidate = (await this.findExisting()).find((f) => f.key === key)
+    if (!candidate) throw new FriendlyError('Não encontramos mais esse arquivo no computador.')
+
+    this.setProgress({ key, phase: 'verifying', downloadedBytes: 0, totalBytes: entry.sizeBytes, bytesPerSecond: 0 })
+    let digest: string
+    try {
+      digest = await sha256File(candidate.filePath)
+    } catch {
+      this.setProgress({ key, phase: 'error', downloadedBytes: 0, totalBytes: entry.sizeBytes, bytesPerSecond: 0 })
+      throw new FriendlyError('Não foi possível ler o arquivo encontrado.')
+    }
+    if (digest !== entry.sha256) {
+      this.setProgress({ key, phase: 'error', downloadedBytes: 0, totalBytes: entry.sizeBytes, bytesPerSecond: 0 })
+      this.progress.delete(key)
+      throw new FriendlyError(
+        `O arquivo em ${candidate.filePath} não é igual ao oficial (pode estar corrompido ou incompleto). Baixe de novo pelo app.`
+      )
+    }
+    const fields = {
+      catalogKey: entry.key,
+      displayName: entry.displayName,
+      filePath: candidate.filePath,
+      fileSizeBytes: candidate.sizeBytes,
+      quantization: entry.quantization,
+      source: candidate.location === 'app' ? ('catalog' as const) : ('imported' as const),
+      status: 'ready' as const,
+      sha256: digest
+    }
+    const existing = this.repos.models.findByCatalogKey(entry.key)
+    if (existing) this.repos.models.update(existing.id, fields)
+    else this.repos.models.insert(fields)
+    this.errors.delete(key)
+    this.progress.delete(key)
+    this.setProgress({ key, phase: 'done', downloadedBytes: entry.sizeBytes, totalBytes: entry.sizeBytes, bytesPerSecond: 0 })
+  }
+
+  /**
+   * Remove um modelo do app. Arquivo na pasta do app: é apagado (libera espaço).
+   * Arquivo em outro lugar (Downloads, LM Studio...): o app só esquece dele; o arquivo fica onde está.
+   * O registro continua no banco (status "error") para as métricas e o histórico apontarem para ele.
+   */
+  async remove(modelId: string): Promise<{ keptFile: string | null }> {
+    const row = this.repos.models.get(modelId)
+    if (!row) throw new FriendlyError('Modelo não encontrado.')
+    if (row.catalogKey && this.downloads.has(row.catalogKey)) await this.cancelDownload(row.catalogKey)
+
+    // Solta o arquivo antes de apagar (no Windows, arquivo aberto não pode ser apagado).
+    if (this.llm.activeModelId === modelId) await this.llm.deactivate()
+    else await this.llm.unloadIfLoaded(modelId)
+
+    const inside = isInside(this.modelsDir, row.filePath)
+    if (inside) {
+      try {
+        await fs.promises.rm(row.filePath, { force: true })
+        // Restos de download parcial do mesmo arquivo.
+        const base = path.basename(row.filePath)
+        for (const f of await fs.promises.readdir(this.modelsDir)) {
+          if (f.startsWith(base) && f !== base) await fs.promises.rm(path.join(this.modelsDir, f), { force: true })
+        }
+      } catch {
+        throw new FriendlyError('Não foi possível apagar o arquivo. Feche outros programas que possam estar usando o modelo.')
+      }
+    }
+    this.repos.models.update(modelId, { status: 'error' })
+    if (row.catalogKey) this.errors.delete(row.catalogKey)
+    return { keptFile: inside ? null : row.filePath }
+  }
+
   async download(key: string): Promise<void> {
-    const entry = findCatalogModel(key)
+    const entry = this.findEntry(key)
     if (!entry) throw new FriendlyError('Modelo desconhecido.')
     if (this.downloads.has(key)) return
 
@@ -213,7 +352,7 @@ export class ModelManager {
     }
 
     const baseName = path.basename(sourcePath)
-    const catalogEntry = MODEL_CATALOG.find((m) => m.fileName === baseName)
+    const catalogEntry = this.catalog.find((m) => m.fileName === baseName)
     const target = uniquePath(path.join(this.modelsDir, baseName), sourcePath)
     if (path.resolve(target) !== path.resolve(sourcePath)) {
       const total = (await fs.promises.stat(sourcePath)).size

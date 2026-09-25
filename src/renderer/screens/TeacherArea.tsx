@@ -604,31 +604,56 @@ function StatsPanel() {
   }, [toast])
   if (!stats) return null
   if (stats.length === 0) return <EmptyState title="Ainda não há uso registrado." />
+
+  // Agrupa por modelo, para comparar um com o outro.
+  const groups = new Map<string, { name: string; rows: GenerationStatsDto[] }>()
+  for (const s of stats) {
+    const key = s.modelId ?? 'basic'
+    const group = groups.get(key) ?? { name: s.modelName ?? 'Modo básico (sem modelo)', rows: [] }
+    group.rows.push(s)
+    groups.set(key, group)
+  }
+
   return (
-    <Card padded={false} className="overflow-hidden">
-      <table className="num w-full text-left text-body">
-        <caption className="px-6 pt-5 text-left text-support text-ink-muted">
-          Tempo médio de cada tipo de texto e quantas vezes o app usou o texto pronto (fallback) em vez do modelo.
-        </caption>
-        <thead>
-          <tr className="border-b border-border text-support text-ink-muted">
-            <th className="px-6 py-3 font-semibold">Tipo</th>
-            <th className="px-6 py-3 font-semibold">Quantidade</th>
-            <th className="px-6 py-3 font-semibold">Tempo médio</th>
-            <th className="px-6 py-3 font-semibold">Texto pronto</th>
-          </tr>
-        </thead>
-        <tbody>
-          {stats.map((s) => (
-            <tr key={s.kind} className="border-b border-border last:border-0">
-              <td className="px-6 py-3 font-medium text-ink">{KIND_LABEL[s.kind] ?? s.kind}</td>
-              <td className="px-6 py-3">{s.total}</td>
-              <td className="px-6 py-3">{(s.avgLatencyMs / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}s</td>
-              <td className="px-6 py-3">{s.fallbackPercent.toLocaleString('pt-BR')}%</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </Card>
+    <div className="flex flex-col gap-6">
+      <p className="text-support text-ink-muted">
+        Por modelo: quantas vezes cada tipo de texto foi gerado, o tempo médio e em quantas vezes o app usou o texto pronto
+        (quando o texto do modelo não passou na conferência, ou no modo básico).
+      </p>
+      {[...groups.entries()].map(([key, group]) => {
+        const total = group.rows.reduce((sum, r) => sum + r.total, 0)
+        const fallback = group.rows.reduce((sum, r) => sum + (r.fallbackPercent * r.total) / 100, 0)
+        return (
+          <Card key={key} padded={false} className="overflow-hidden">
+            <div className="flex flex-wrap items-baseline justify-between gap-2 px-6 pt-5">
+              <h3 className="text-[20px] font-semibold text-ink">{group.name}</h3>
+              <p className="num text-support text-ink-muted">
+                {total} textos · {Math.round((fallback / total) * 100)}% texto pronto no geral
+              </p>
+            </div>
+            <table className="num mt-2 w-full text-left text-body">
+              <thead>
+                <tr className="border-b border-border text-support text-ink-muted">
+                  <th className="px-6 py-3 font-semibold">Tipo</th>
+                  <th className="px-6 py-3 font-semibold">Quantidade</th>
+                  <th className="px-6 py-3 font-semibold">Tempo médio</th>
+                  <th className="px-6 py-3 font-semibold">Texto pronto</th>
+                </tr>
+              </thead>
+              <tbody>
+                {group.rows.map((s) => (
+                  <tr key={s.kind} className="border-b border-border last:border-0">
+                    <td className="px-6 py-3 font-medium text-ink">{KIND_LABEL[s.kind] ?? s.kind}</td>
+                    <td className="px-6 py-3">{s.total}</td>
+                    <td className="px-6 py-3">{(s.avgLatencyMs / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}s</td>
+                    <td className="px-6 py-3">{s.fallbackPercent.toLocaleString('pt-BR')}%</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </Card>
+        )
+      })}
+    </div>
   )
 }

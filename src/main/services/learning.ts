@@ -64,9 +64,44 @@ const MAX_WRONG_BEFORE_HELP = 3
 /** Dica, chat e pergunta depois do erro: curtos (no máximo ~2 frases). */
 const SHORT_TUTOR_LENGTH = 260
 /** Tempo total para um texto aparecer (tentativas incluídas) antes de usar o texto pronto. */
-const STATEMENT_BUDGET_MS = 20_000
-const TUTOR_BUDGET_MS = 25_000
+export const STATEMENT_BUDGET_MS = 20_000
+export const TUTOR_BUDGET_MS = 25_000
 const MAX_CHAT_LENGTH = 200
+
+export interface TutorCheckOptions {
+  /** Texto do código que o modelo está reescrevendo (dica, diagnóstico). */
+  idea?: string
+  extraNumbers?: readonly number[]
+  allowAnswerPhrase?: boolean
+  requireQuestion?: boolean
+}
+
+/**
+ * Regras de número por tipo de texto. O tutor só pode citar os números do problema (e seus algarismos
+ * e ordens) mais os números da ideia que o código mandou reescrever, e esses precisam continuar lá.
+ * Usado pelo app e pelo benchmark (as mesmas regras nos dois).
+ */
+export function tutorTextChecks(q: GeneratedQuestion, options: TutorCheckOptions = {}): Pick<TutorRequest, 'validate' | 'prefixProblem'> {
+  const ideaNumbers = options.idea
+    ? extractNumbers(options.idea)
+        .filter((n) => n.kind === 'digits')
+        .map((n) => n.value)
+    : []
+  const ctx: TutorTextContext = {
+    answer: q.answer,
+    operands: q.numbers,
+    // Se a ideia do código era uma pergunta, a versão do modelo também tem que ser (método socrático).
+    requireQuestion: options.requireQuestion ?? (options.idea ? options.idea.includes('?') : false),
+    allowAnswerPhrase: options.allowAnswerPhrase,
+    allowedNumbers: [...tutorNumberVocabulary([...q.numbers, ...(options.extraNumbers ?? [])]), ...ideaNumbers],
+    requiredNumbers: ideaNumbers,
+    maxLength: options.allowAnswerPhrase ? undefined : SHORT_TUTOR_LENGTH
+  }
+  return {
+    validate: (raw) => validateTutorText(raw, ctx),
+    prefixProblem: (text) => tutorPrefixProblem(text, ctx)
+  }
+}
 
 /** Regras do enunciado: contas diretas podem mostrar a conta; em subtração e divisão a ordem dos números importa. */
 export function statementContext(q: GeneratedQuestion): StatementContext {
@@ -423,33 +458,8 @@ export class LearningService {
     return successes / recent.length < 0.25 ? 1 : 3
   }
 
-  /**
-   * Regras de número por tipo de texto. O tutor só pode citar os números do problema (e seus algarismos
-   * e ordens) mais os números da ideia que o código mandou reescrever, e esses precisam continuar lá.
-   */
-  private tutorChecks(
-    q: GeneratedQuestion,
-    options: { idea?: string; extraNumbers?: readonly number[]; allowAnswerPhrase?: boolean; requireQuestion?: boolean } = {}
-  ): Pick<TutorRequest, 'validate' | 'prefixProblem'> {
-    const ideaNumbers = options.idea
-      ? extractNumbers(options.idea)
-          .filter((n) => n.kind === 'digits')
-          .map((n) => n.value)
-      : []
-    const ctx: TutorTextContext = {
-      answer: q.answer,
-      operands: q.numbers,
-      // Se a ideia do código era uma pergunta, a versão do modelo também tem que ser (método socrático).
-      requireQuestion: options.requireQuestion ?? (options.idea ? options.idea.includes('?') : false),
-      allowAnswerPhrase: options.allowAnswerPhrase,
-      allowedNumbers: [...tutorNumberVocabulary([...q.numbers, ...(options.extraNumbers ?? [])]), ...ideaNumbers],
-      requiredNumbers: ideaNumbers,
-      maxLength: options.allowAnswerPhrase ? undefined : SHORT_TUTOR_LENGTH
-    }
-    return {
-      validate: (raw) => validateTutorText(raw, ctx),
-      prefixProblem: (text) => tutorPrefixProblem(text, ctx)
-    }
+  private tutorChecks(q: GeneratedQuestion, options: TutorCheckOptions = {}): Pick<TutorRequest, 'validate' | 'prefixProblem'> {
+    return tutorTextChecks(q, options)
   }
 
   private async prepareQuestion(

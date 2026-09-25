@@ -6,7 +6,7 @@
 
 **Tutor de matemática 100% offline para o 3º ano, com um modelo de linguagem rodando no próprio computador da escola.**
 
-Versão **1.0.0** · Windows (Electron) · BNCC 3º ano, unidade Números · Português do Brasil
+Versão **1.1.0** · Windows (Electron) · BNCC 3º ano, unidade Números · Português do Brasil
 
 </div>
 
@@ -28,6 +28,7 @@ Versão **1.0.0** · Windows (Electron) · BNCC 3º ano, unidade Números · Por
 - [Arquitetura](#arquitetura)
 - [Como rodar](#como-rodar)
 - [Testes e qualidade](#testes-e-qualidade)
+- [Benchmark e simulação de PC de escola](#benchmark-e-simulação-de-pc-de-escola)
 - [Instalador e distribuição](#instalador-e-distribuição)
 - [Sincronização com a nuvem (opcional)](#sincronização-com-a-nuvem-opcional)
 - [Design e acessibilidade](#design-e-acessibilidade)
@@ -200,7 +201,18 @@ Os modelos são conferidos no Hugging Face e verificados por **SHA-256** depois 
 - **Escola sem internet:** baixe o `.gguf` em outro computador, traga num pendrive e use **Importar arquivo .gguf**. O app confere a extensão, abre o cabeçalho GGUF como teste e, se for um arquivo do catálogo, confere o SHA-256.
 - **Modo básico:** sem modelo, tudo funciona com textos prontos, e um aviso discreto aparece no canto da tela.
 
-Para trocar de modelo: engrenagem na tela de PIN → senha → aba **Modelo** → **Baixar** → **Testar** → **Usar este**.
+### Escolher, trocar e remover modelos
+
+Na aba **Modelo** da área do professor (e no passo 2 da primeira execução), a seção **"Modelos neste computador"** lista tudo o que está pronto para usar:
+
+- **Escolher:** um modelo por vez fica "Em uso" (ou **Nenhum: modo básico**). É só clicar em **Usar este**.
+- **Testar:** gera um enunciado de exemplo com aquele modelo e mostra o tempo.
+- **Remover:** se o arquivo está na pasta do app, ele é **apagado** e o espaço é liberado. Se está em outra pasta (Downloads, LM Studio...), o app só deixa de usá-lo e **o arquivo fica onde está**. Remover o modelo em uso leva o app ao modo básico, e o app avisa antes.
+- **Modelos que já estavam no computador:** o app procura os arquivos oficiais do catálogo na pasta do app, em `~/.node-llama-cpp/models`, em Downloads, na Área de Trabalho, em Documentos e nas pastas do LM Studio. Um arquivo encontrado aparece como **"encontrado neste computador"**, e **Conferir e adicionar** confere o SHA-256 antes de usar, sem baixar de novo. Um arquivo com o nome certo mas corrompido é recusado.
+
+![Modelos neste computador](docs/screenshots/modelos-escolher.png)
+
+Abaixo dessa seção ficam os cards para **baixar** os modelos que faltam.
 
 ---
 
@@ -271,6 +283,7 @@ Alunos de demonstração (só em desenvolvimento): **Ana 1234 · Bruno 2468 · C
 | Comando | O que faz |
 |---|---|
 | `npm run dev` | App em desenvolvimento (cria os alunos de demonstração). |
+| `npm run bench` | Benchmark dos modelos instalados neste computador (veja abaixo). |
 | `npm run reset` | Volta à primeira execução (apaga o banco e mantém os modelos). `npm run reset -- --all` apaga a pasta de dados inteira. |
 | `npm run typecheck` | TypeScript strict (main e renderer). |
 | `npm run lint` | ESLint, incluindo a regra que isola `src/core`. |
@@ -287,10 +300,11 @@ Variáveis úteis: `PENSA_JUNTO_USER_DATA` (outra pasta de dados), `PENSA_JUNTO_
 
 | O quê | Como |
 |---|---|
-| **160 testes unitários** (Vitest) | Núcleo, banco, serviços, sincronização e validação. |
+| **171 testes unitários** (Vitest) | Núcleo, banco, serviços, sincronização e validação. |
 | **1.000 seeds por template** | Cada template gera resultados válidos (naturais, adequados ao ano, resposta fora do enunciado) e seus textos prontos passam pela mesma validação do modelo. |
 | **Vazamento da resposta** | Algarismos, ponto de milhar, "mil" e números por extenso. Um "modelo" de teste que **sempre** tenta contar a resposta nunca consegue que ela chegue à criança, nem no streaming. |
 | **Fluxo completo** (Playwright) | Primeira execução → PIN (errado e certo) → sessão com erro, dica e chat → **fechar o app no meio e retomar** → 5 acertos → conclusão → isolamento entre alunos → área do professor e cartões. |
+| **Escolher e remover modelos** (Playwright, opcional) | Com os `.gguf` reais (por *hard link*, sem copiar): detectar, conferir o SHA-256, escolher entre dois modelos, testar, trocar e remover o que está em uso. `PENSA_JUNTO_MODELS_SOURCE=<pasta> npx playwright test models`. |
 | **Modelo real** (Playwright, opcional) | Baixa o Llama 3.2 1B pelo app, confere o SHA-256, testa, ativa e faz uma sessão real. Registra o texto gerado, a origem (modelo ou texto pronto) e o motivo de cada fallback. |
 
 ```bash
@@ -301,10 +315,56 @@ Medido nesta máquina (16 GB de RAM), com o Llama 3.2 1B: o enunciado começa a 
 
 ---
 
+## Benchmark e simulação de PC de escola
+
+Mede, **no computador em que roda**, o que a criança vai sentir com cada modelo instalado. Usa os mesmos prompts, as mesmas regras de validação e os mesmos limites de tempo do app, e não grava nada no banco.
+
+```bash
+npm run bench                          # todos os modelos instalados, 10 enunciados + 10 dicas cada
+npm run bench -- --n 5                 # mais rápido
+npm run bench -- --models llama32-1b   # só um modelo (llama32-1b, qwen3-1_7b, llama32-3b ou active)
+npm run bench -- --threads 2 --no-gpu  # simula um PC de escola: 2 núcleos, sem GPU
+```
+
+Feche o app antes (ele só permite uma instância por pasta de dados). O resumo sai no terminal e o relatório completo em `benchmark.json`, na pasta de dados:
+
+```
+> Llama 3.2 1B Instruct
+  Carregar: 7,9s · memória do app (pico): 1638 MB · RAM livre (mínimo): 1088 MB
+  Enunciado: começa em 0,2s · pronto em 1,0s (p90 1,2s) · modelo aprovado em 67%
+  Dica:      começa em 0,2s · pronta em 0,9s (p90 1,0s) · modelo aprovado em 33%
+  Meta do enunciado (~10 s): OK
+```
+
+**No app instalado** (numa VM ou num PC de escola), as mesmas medições saem por variáveis de ambiente, sem precisar do código-fonte:
+
+```powershell
+$env:PENSA_JUNTO_BENCH = "1"; $env:PENSA_JUNTO_BENCH_N = "5"
+& "$env:LOCALAPPDATA\Programs\Pensa Junto\Pensa Junto.exe"   # grava benchmark.json em %APPDATA%\Pensa Junto
+```
+
+| Variável | Efeito |
+|---|---|
+| `PENSA_JUNTO_BENCH=1` | Roda o benchmark, grava `benchmark.json` e fecha. |
+| `PENSA_JUNTO_BENCH_N` | Quantos enunciados e quantas dicas por modelo (padrão 10). |
+| `PENSA_JUNTO_BENCH_MODELS` | `all` (padrão), `active` ou chaves separadas por vírgula. |
+| `PENSA_JUNTO_THREADS` | Limita os núcleos usados pelo modelo (também vale no uso normal). |
+| `PENSA_JUNTO_GPU=off` | Desliga a GPU (também vale no uso normal). |
+| `PENSA_JUNTO_LLAMA_LOGS=1` | Mostra os avisos do llama.cpp no terminal (por padrão, só erros aparecem). |
+
+Para testar 4 GB e 8 GB de RAM de verdade, use o Windows Sandbox (`<MemoryInMB>4096</MemoryInMB>`, sem rede e sem GPU), uma VM no Hyper-V com 2 núcleos ou, melhor ainda, um PC de escola.
+
+**O que as medições já mostraram**
+
+- Com GPU (Vulkan), o 1B e o Qwen3 1.7B respondem em ~1 s nesta máquina de desenvolvimento.
+- **Só CPU, com pouca RAM livre, é o cenário crítico.** Com 2 threads e ~600 MB livres (o Windows passa a usar o disco como memória), o 1B leva 13–14 s só para começar a escrever; com 4 threads, ~7–8 s. Nesse cenário, o modo básico pode ser a melhor escolha, e o benchmark mostra isso antes de a turma usar.
+- **Cache do começo do prompt:** as regras fixas vêm primeiro e só a parte que muda fica no fim, então o llama.cpp reaproveita o início entre os pedidos. O 1º pedido em CPU levou 44 s até o primeiro token; os seguintes, 13 s.
+- **O orçamento de tempo vale de verdade:** se o modelo não responde a tempo, a criança recebe o texto pronto no prazo, sem esperar o motor terminar de ler um prompt já cancelado (antes, esse caso chegava a 41 s).
+
 ## Instalador e distribuição
 
 ```bash
-npm run dist:win     # dist/PensaJunto-Setup-1.0.0.exe (~130 MB)
+npm run dist:win     # dist/PensaJunto-Setup-1.1.0.exe (~130 MB)
 ```
 
 - `better-sqlite3` e `node-llama-cpp` ficam fora do `.asar` (`asarUnpack`). O node-llama-cpp foi validado carregando o modelo a partir de `app.asar.unpacked`.
@@ -395,6 +455,16 @@ A direção é **clean, dinâmico e acolhedor, sem ser infantilizado**, com a se
 ---
 
 ## Changelog
+
+### 1.1.0
+
+Gerenciamento de modelos e medição de desempenho:
+
+- Seção **"Modelos neste computador"**: escolher entre os modelos baixados (ou o modo básico), testar e remover; detecção de modelos que já estavam no computador, com conferência de SHA-256.
+- Aba **"Uso do app"** com métricas **por modelo**.
+- `npm run bench` e variáveis `PENSA_JUNTO_THREADS` / `PENSA_JUNTO_GPU=off` para medir e simular PCs fracos.
+- Prompts reordenados para reaproveitar o cache do llama.cpp; orçamento de tempo que vale mesmo com o motor ocupado.
+- Avisos inofensivos do llama.cpp não aparecem mais no terminal.
 
 ### 1.0.0
 

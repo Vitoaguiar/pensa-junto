@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, sql } from 'drizzle-orm'
 import type { Db } from '../connection'
-import { bnccSkills, generationLogs } from '../schema'
+import { bnccSkills, generationLogs, llmModels } from '../schema'
 import { nowIso, uuid } from '../util'
 
 export function createBnccRepo(db: Db) {
@@ -54,17 +54,21 @@ export function createLogsRepo(db: Db) {
         .all()
         .map((r) => ({ fellBack: r.fellBack === 1 }))
     },
-    /** Métricas agregadas por tipo de geração (para o pitch e para depurar). */
+    /** Métricas por modelo e por tipo de geração (para comparar modelos, para o pitch e para depurar). */
     stats() {
       return db
         .select({
+          modelId: generationLogs.modelId,
+          modelName: llmModels.displayName,
           kind: generationLogs.kind,
           total: sql<number>`count(*)`,
           avgLatencyMs: sql<number>`round(avg(${generationLogs.latencyMs}))`,
           fallbackPercent: sql<number>`round(avg(${generationLogs.fellBack}) * 100, 1)`
         })
         .from(generationLogs)
-        .groupBy(generationLogs.kind)
+        .leftJoin(llmModels, eq(generationLogs.modelId, llmModels.id))
+        .groupBy(generationLogs.modelId, generationLogs.kind)
+        .orderBy(llmModels.displayName, generationLogs.kind)
         .all()
     }
   }

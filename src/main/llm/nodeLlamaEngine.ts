@@ -17,7 +17,27 @@ const loadModule = () => (modulePromise ??= import('node-llama-cpp'))
  * Motor com node-llama-cpp. O modelo é carregado UMA vez e o contexto é reutilizado;
  * as gerações são serializadas (uma sequência de contexto só atende um pedido por vez).
  */
+export interface EngineOptions {
+  /** false = só CPU (ex.: simular um PC de escola sem GPU). Padrão: usa a GPU se houver. */
+  gpu?: boolean
+  /** Limite de threads de CPU (ex.: 2, para simular um processador fraco). Padrão: automático. */
+  threads?: number
+  /** Mostra avisos do llama.cpp no terminal. Padrão: só erros. */
+  verboseLogs?: boolean
+}
+
+/** O que o motor está usando de fato (para o relatório de benchmark e para o suporte). */
+export interface EngineInfo {
+  gpu: string | false
+  threads: number | null
+  gpuLayers: number | null
+  contextSize: number | null
+  modelSizeBytes: number | null
+}
+
 export class NodeLlamaEngine implements LlmEngine {
+  constructor(private readonly options: EngineOptions = {}) {}
+
   private llama: Llama | null = null
   private model: LlamaModel | null = null
   private context: LlamaContext | null = null
@@ -36,12 +56,20 @@ export class NodeLlamaEngine implements LlmEngine {
 
   private async getLlama(): Promise<Llama> {
     if (this.llama) return this.llama
-    const { getLlama } = await loadModule()
+    const { getLlama, LlamaLogLevel } = await loadModule()
+    const common = {
+      build: 'never' as const,
+      progressLogs: false,
+      // Avisos do llama.cpp (ex.: "control-looking token ... was not control-type") são inofensivos e
+      // só assustam no terminal; por padrão aparecem apenas erros.
+      logLevel: this.options.verboseLogs ? LlamaLogLevel.warn : LlamaLogLevel.error,
+      ...(this.options.threads ? { maxThreads: this.options.threads } : {})
+    }
     try {
       // Usa a GPU se houver (Vulkan/CUDA/Metal); nunca tenta compilar nada na máquina da escola.
-      this.llama = await getLlama({ gpu: 'auto', build: 'never', progressLogs: false })
+      this.llama = await getLlama({ ...common, gpu: this.options.gpu === false ? false : 'auto' })
     } catch {
-      this.llama = await getLlama({ gpu: false, build: 'never', progressLogs: false })
+      this.llama = await getLlama({ ...common, gpu: false })
     }
     return this.llama
   }
@@ -52,13 +80,26 @@ export class NodeLlamaEngine implements LlmEngine {
     const llama = await this.getLlama()
     this.model = await llama.loadModel({ modelPath: modelFilePath })
     // Contexto pequeno: os prompts do app são curtos, e isso economiza RAM em PCs fracos.
-    this.context = await this.model.createContext({ contextSize: { min: 1024, max: 4096 } })
+    this.context = await this.model.createContext({
+      contextSize: { min: 1024, max: 4096 },
+      ...(this.options.threads ? { threads: this.options.threads } : {})
+    })
     this.sequence = this.context.getSequence()
     this.modelPath = modelFilePath
     this.thinkingModel = /qwen3/i.test(path.basename(modelFilePath))
     // Aquecimento: a primeira geração é bem mais lenta (alocação, shaders da GPU). Paga agora, no carregamento,
     // e não quando a criança pede a primeira questão.
     await this.generateNow({ messages: [{ role: 'user', content: 'Oi' }], maxTokens: 1, temperature: 0 }).catch(() => undefined)
+  }
+
+  info(): EngineInfo {
+    return {
+      gpu: this.llama ? this.llama.gpu : false,
+      threads: this.context?.currentThreads ?? null,
+      gpuLayers: this.model?.gpuLayers ?? null,
+      contextSize: this.context?.contextSize ?? null,
+      modelSizeBytes: this.model?.size ?? null
+    }
   }
 
   async unload(): Promise<void> {
@@ -95,7 +136,8 @@ export class NodeLlamaEngine implements LlmEngine {
           : { type: 'model', response: [m.content] }
     )
 
-    await sequence.clearHistory()
+    // Sem clearHistory(): o node-llama-cpp compara com o que já está no contexto e só reavalia a partir
+    // do primeiro token diferente. Os prompts começam pelas partes fixas justamente para aproveitar isso.
     const session = new LlamaChatSession({ contextSequence: sequence, autoDisposeSequence: false })
     try {
       session.setChatHistory(history)

@@ -8,9 +8,10 @@ import type {
   Focus,
   GenerationStatsDto,
   HelpActionResultDto,
-  ImportedModelDto,
+  InstalledModelDto,
   ModelsOverviewDto,
   ModelTestResultDto,
+  RemoveModelResultDto,
   SessionStateDto,
   SessionSummaryDto,
   StreamEventDto,
@@ -42,7 +43,9 @@ export interface IpcContract {
   'models:list': { req: Void; res: ModelsOverviewDto }
   'models:download': { req: { key: string }; res: ModelsOverviewDto }
   'models:cancelDownload': { req: { key: string }; res: ModelsOverviewDto }
-  'models:import': { req: Void; res: ImportedModelDto | null }
+  'models:import': { req: Void; res: InstalledModelDto | null }
+  'models:adopt': { req: { key: string }; res: ModelsOverviewDto }
+  'models:remove': { req: { modelId: string }; res: RemoveModelResultDto }
   'models:test': { req: { modelId: string }; res: ModelTestResultDto }
   'models:activate': { req: { modelId: string }; res: ModelsOverviewDto }
   'models:useBasicMode': { req: Void; res: ModelsOverviewDto }
@@ -101,6 +104,8 @@ export const IPC_CHANNELS = [
   'models:download',
   'models:cancelDownload',
   'models:import',
+  'models:adopt',
+  'models:remove',
   'models:test',
   'models:activate',
   'models:useBasicMode',

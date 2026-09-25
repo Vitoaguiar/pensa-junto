@@ -69,20 +69,23 @@ export async function runTutor(llm: TextGenerator | null, req: TutorRequest): Pr
       const controller = new AbortController()
       const onOuterAbort = () => controller.abort()
       req.signal?.addEventListener('abort', onOuterAbort)
-      const timer = Number.isFinite(limit) ? setTimeout(() => controller.abort(), limit) : null
+      let timer: ReturnType<typeof setTimeout> | null = null
       let raw = ''
       let released = ''
       let rejected: string | null = null
       let enough = false
+      // Estourou o tempo: a criança não espera o motor terminar de ler um prompt já cancelado
+      // (em CPU fraca isso levava dezenas de segundos). A geração é abandonada e segue o fallback.
+      let abandoned = false
 
       try {
-        const output = await llm.generate(req.messages, {
+        const generation = llm.generate(req.messages, {
           // Cada nova tentativa varia um pouco mais.
           temperature: Math.min(1.1, req.temperature + attempt * 0.15),
           maxTokens: req.maxTokens,
           signal: controller.signal,
           onToken: (chunk) => {
-            if (rejected || enough) return
+            if (rejected || enough || abandoned) return
             raw += chunk
             const clean = cleanOutput(raw)
             const safe = clean.slice(0, safeReleaseIndex(clean)).trimEnd()
@@ -102,7 +105,21 @@ export async function runTutor(llm: TextGenerator | null, req: TutorRequest): Pr
             }
           }
         })
-        raw = output || raw
+        const deadline = Number.isFinite(limit)
+          ? new Promise<'timeout'>((resolve) => {
+              timer = setTimeout(() => {
+                controller.abort()
+                resolve('timeout')
+              }, limit)
+            })
+          : null
+        const winner = deadline ? await Promise.race([generation, deadline]) : await generation
+        if (winner === 'timeout') {
+          abandoned = true
+          generation.catch(() => undefined)
+        } else {
+          raw = winner || raw
+        }
       } catch (err) {
         if (!rejected && !enough && !controller.signal.aborted) {
           problems.push(`erro do modelo: ${err instanceof Error ? err.message : String(err)}`)
@@ -114,6 +131,12 @@ export async function runTutor(llm: TextGenerator | null, req: TutorRequest): Pr
 
       if (rejected) {
         problems.push(rejected)
+      } else if (abandoned) {
+        problems.push('tempo esgotado')
+        retries++
+        if (released) req.onStream?.({ type: 'reset' })
+        // O motor ainda está ocupado com a geração abandonada: outra tentativa só esperaria na fila.
+        break
       } else if (controller.signal.aborted && !enough) {
         problems.push(req.signal?.aborted ? 'cancelado' : 'tempo esgotado')
       } else {

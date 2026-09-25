@@ -132,6 +132,10 @@ describe('settings, modelos e logs', () => {
     expect(repos.models.findByCatalogKey('llama32-1b')?.status).toBe('ready')
     repos.logs.insert({ kind: 'hint', modelId: m.id, latencyMs: 1200, retries: 0, fellBack: false })
     repos.logs.insert({ kind: 'hint', modelId: m.id, latencyMs: 800, retries: 3, fellBack: true })
-    expect(repos.logs.stats()).toEqual([{ kind: 'hint', total: 2, avgLatencyMs: 1000, fallbackPercent: 50 }])
+    repos.logs.insert({ kind: 'hint', modelId: null, latencyMs: 10, retries: 0, fellBack: true })
+    expect(repos.logs.stats()).toEqual([
+      { modelId: null, modelName: null, kind: 'hint', total: 1, avgLatencyMs: 10, fallbackPercent: 100 },
+      { modelId: m.id, modelName: 'Llama 3.2 1B', kind: 'hint', total: 2, avgLatencyMs: 1000, fallbackPercent: 50 }
+    ])
   })
 })
