@@ -1,6 +1,7 @@
 import {
   BarChart3,
   Brain,
+  ClipboardCheck,
   KeyRound,
   LogOut,
   Pencil,
@@ -25,15 +26,17 @@ import { SelectField, TextField } from '../components/Field'
 import { AdultPage, PageTitle, TeacherGate } from '../components/Layout'
 import { call, errorMessage } from '../lib/api'
 import { useApp } from '../store/app'
+import { EvaluationPanel } from './EvaluationPanel'
 import { ModelSetupPanel } from './ModelSetup'
 
-type Tab = 'alunos' | 'turmas' | 'modelo' | 'uso'
+type Tab = 'alunos' | 'turmas' | 'modelo' | 'uso' | 'avaliacao'
 
 const TABS: Array<{ key: Tab; label: string; icon: typeof Users }> = [
   { key: 'alunos', label: 'Alunos', icon: Users },
   { key: 'turmas', label: 'Turmas', icon: School },
   { key: 'modelo', label: 'Modelo', icon: Brain },
-  { key: 'uso', label: 'Uso do app', icon: BarChart3 }
+  { key: 'uso', label: 'Uso do app', icon: BarChart3 },
+  { key: 'avaliacao', label: 'Avaliação', icon: ClipboardCheck }
 ]
 
 export function TeacherArea() {
@@ -89,6 +92,7 @@ export function TeacherArea() {
           {tab === 'turmas' && <ClassroomsManager />}
           {tab === 'modelo' && <ModelSetupPanel />}
           {tab === 'uso' && <StatsPanel />}
+          {tab === 'avaliacao' && <EvaluationPanel />}
         </div>
         <ChangePasswordModal open={passwordOpen} onClose={() => setPasswordOpen(false)} />
       </AdultPage>

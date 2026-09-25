@@ -10,6 +10,7 @@ const requestId = z.string().min(1).max(64)
 const name = z.string().trim().min(1).max(80)
 const grade = z.number().int().min(1).max(5)
 const digits = z.string().max(12)
+const evaluationCode = z.string().regex(/^[A-Z0-9]{4,8}$/)
 
 const studentInput = z.object({
   fullName: name,
@@ -40,6 +41,20 @@ export const ipcSchemas = {
   'models:test': z.object({ modelId: id }),
   'models:activate': z.object({ modelId: id }),
   'models:useBasicMode': none,
+
+  'evaluation:list': none,
+  'evaluation:create': z.object({
+    includeCode: z.boolean(),
+    modelIds: z.array(id).max(10),
+    kinds: z.array(z.enum(['statement', 'hint'])).min(1),
+    skills: z.array(z.enum(['EF03MA03', 'EF03MA05', 'EF03MA06', 'EF03MA07', 'EF03MA08'])).min(1),
+    perSkill: z.number().int().min(1).max(100)
+  }),
+  'evaluation:cancel': none,
+  'evaluation:importRatings': z.object({ code: evaluationCode }),
+  'evaluation:report': z.object({ code: evaluationCode }),
+  'evaluation:openFolder': z.object({ code: evaluationCode }),
+  'evaluation:openReport': z.object({ code: evaluationCode }),
 
   'auth:verifyPin': z.object({ pin: z.string().regex(/^\d{4}$/) }),
   'auth:currentStudent': none,

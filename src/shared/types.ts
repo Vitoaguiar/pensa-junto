@@ -256,3 +256,68 @@ export interface GenerationStatsDto {
   avgLatencyMs: number
   fallbackPercent: number
 }
+
+// ---------- Modo de avaliação (professores avaliam os textos às cegas) ----------
+
+export interface EvaluationCreateOptionsDto {
+  /** Inclui a condição "textos do código (sem modelo)" como linha de base. */
+  includeCode: boolean
+  modelIds: string[]
+  kinds: Array<'statement' | 'hint'>
+  skills: string[]
+  /** Questões por habilidade (o artigo de referência recomenda 50). */
+  perSkill: number
+}
+
+export interface EvaluationSetDto {
+  code: string
+  createdAt: string
+  conditions: string[]
+  kinds: Array<'statement' | 'hint'>
+  skills: string[]
+  items: number
+  /** Planilhas de avaliadores já importadas. */
+  raters: number
+}
+
+export interface EvaluationProgressDto {
+  code: string
+  done: number
+  total: number
+  label: string
+}
+
+export interface EvaluationImportResultDto {
+  imported: Array<{ rater: string; rated: number; unknown: number }>
+  errors: Array<{ file: string; message: string }>
+}
+
+export interface EvaluationStatsDto {
+  items: number
+  ratings: number
+  intentionMean: number | null
+  intentionMedian: number | null
+  /** % de notas ≥ 4 em "Eu usaria em sala". */
+  approvalPct: number | null
+  mathCorrectPct: number | null
+  adequacyMean: number | null
+  /** % dos textos desta condição que vieram do modelo (o resto foi o texto do código, após recusa da validação). */
+  modelTextPct: number
+}
+
+export interface EvaluationConditionReportDto {
+  label: string
+  overall: EvaluationStatsDto
+  byKind: Record<string, EvaluationStatsDto>
+  bySkill: Record<string, EvaluationStatsDto>
+}
+
+export interface EvaluationReportDto {
+  code: string
+  raters: string[]
+  ratedItems: number
+  totalItems: number
+  conditions: EvaluationConditionReportDto[]
+  agreement: { items: number; percentAgreement: number | null; kappa: number | null; label: string } | null
+  reportPath: string
+}

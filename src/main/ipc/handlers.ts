@@ -1,8 +1,9 @@
-import { BrowserWindow, dialog, ipcMain } from 'electron'
+import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import type { z } from 'zod'
 import type { IpcChannel, IpcContract, IpcEvent, IpcEvents, IpcResult } from '@shared/channels'
 import type { AppStatusDto } from '@shared/types'
 import type { Repositories } from '../db/repositories'
+import type { EvaluationService } from '../evaluation/evaluationService'
 import type { LlmService } from '../llm/llmService'
 import { FriendlyError, type ModelManager } from '../llm/modelManager'
 import { AuthError, type AuthService } from '../services/auth'
@@ -16,6 +17,7 @@ export interface IpcDeps {
   students: StudentsService
   learning: LearningService
   models: ModelManager
+  evaluation: EvaluationService
   llm: LlmService
   isDev: boolean
   syncEnabled: boolean
@@ -38,7 +40,7 @@ export function sendEvent<E extends IpcEvent>(win: BrowserWindow | null, event: 
 }
 
 export function registerIpc(deps: IpcDeps): { status: () => AppStatusDto } {
-  const { auth, students, learning, models, llm, repos } = deps
+  const { auth, students, learning, models, llm, repos, evaluation } = deps
 
   function handle<C extends IpcChannel>(channel: C, handler: Handler<C>): void {
     ipcMain.handle(channel, async (event, raw): Promise<IpcResult<IpcContract[C]['res']>> => {
@@ -151,6 +153,47 @@ export function registerIpc(deps: IpcDeps): { status: () => AppStatusDto } {
     await llm.deactivate()
     sendEvent(deps.getWindow(), 'app:onStatus', status())
     return models.overview()
+  })
+
+  // ---------- Modo de avaliação (professor) ----------
+  handle('evaluation:list', () => teacher(() => evaluation.list()))
+  handle('evaluation:create', async (options) => {
+    auth.requireTeacher()
+    try {
+      return await evaluation.create(options)
+    } catch (err) {
+      throw new FriendlyError(err instanceof Error ? err.message : 'Não foi possível gerar a rodada.')
+    }
+  })
+  handle('evaluation:cancel', () =>
+    teacher(() => {
+      evaluation.cancel()
+      return true as const
+    })
+  )
+  handle('evaluation:importRatings', async ({ code }) => {
+    auth.requireTeacher()
+    const win = deps.getWindow()
+    const options = {
+      title: 'Importar planilhas preenchidas pelos avaliadores',
+      filters: [{ name: 'Planilha CSV', extensions: ['csv'] }],
+      properties: ['openFile' as const, 'multiSelections' as const]
+    }
+    const picked = win ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options)
+    if (picked.canceled || picked.filePaths.length === 0) return null
+    return evaluation.importRatings(code, picked.filePaths)
+  })
+  handle('evaluation:report', ({ code }) => teacher(() => evaluation.report(code)))
+  handle('evaluation:openFolder', async ({ code }) => {
+    auth.requireTeacher()
+    await shell.openPath(evaluation.folderOf(code))
+    return true as const
+  })
+  handle('evaluation:openReport', async ({ code }) => {
+    auth.requireTeacher()
+    const { reportPath } = evaluation.report(code)
+    await shell.openPath(reportPath)
+    return true as const
   })
 
   // ---------- Autenticação ----------

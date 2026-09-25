@@ -28,6 +28,7 @@ Versão **1.1.0** · Windows (Electron) · BNCC 3º ano, unidade Números · Por
 - [Arquitetura](#arquitetura)
 - [Como rodar](#como-rodar)
 - [Testes e qualidade](#testes-e-qualidade)
+- [Avaliação dos textos por professores](#avaliação-dos-textos-por-professores)
 - [Benchmark e simulação de PC de escola](#benchmark-e-simulação-de-pc-de-escola)
 - [Instalador e distribuição](#instalador-e-distribuição)
 - [Sincronização com a nuvem (opcional)](#sincronização-com-a-nuvem-opcional)
@@ -300,7 +301,7 @@ Variáveis úteis: `PENSA_JUNTO_USER_DATA` (outra pasta de dados), `PENSA_JUNTO_
 
 | O quê | Como |
 |---|---|
-| **171 testes unitários** (Vitest) | Núcleo, banco, serviços, sincronização e validação. |
+| **180 testes unitários** (Vitest) | Núcleo, banco, serviços, sincronização e validação. |
 | **1.000 seeds por template** | Cada template gera resultados válidos (naturais, adequados ao ano, resposta fora do enunciado) e seus textos prontos passam pela mesma validação do modelo. |
 | **Vazamento da resposta** | Algarismos, ponto de milhar, "mil" e números por extenso. Um "modelo" de teste que **sempre** tenta contar a resposta nunca consegue que ela chegue à criança, nem no streaming. |
 | **Fluxo completo** (Playwright) | Primeira execução → PIN (errado e certo) → sessão com erro, dica e chat → **fechar o app no meio e retomar** → 5 acertos → conclusão → isolamento entre alunos → área do professor e cartões. |
@@ -314,6 +315,26 @@ PENSA_JUNTO_MODEL_E2E=1 npx playwright test with-model   # baixa ~770 MB na prim
 Medido nesta máquina (16 GB de RAM), com o Llama 3.2 1B: o enunciado começa a aparecer em **~0,6 s** e termina em **~1–2 s**; dicas em **~0,5–1,5 s**.
 
 ---
+
+## Avaliação dos textos por professores
+
+A validação automática garante o que dá para verificar (resposta nunca vaza, contas certas, números e ordem), mas **não enxerga o sentido pedagógico**: "a resposta não é apenas 10, né?" passa em todas as regras e ainda assim confunde. Um estudo com modelos leves e questões da BNCC (Monteiro et al., AIED 2026) mostrou o mesmo: a avaliação automática aprovou metade das questões que a pedagoga rejeitou. Por isso o app tem um **modo de avaliação** para professores, na aba **Avaliação** da área do professor.
+
+1. **Gerar uma rodada:** escolha as condições (**textos do código**, como linha de base, e os modelos instalados), os tipos (enunciados e/ou dicas), as habilidades e quantas questões por habilidade. Todas as condições reescrevem **as mesmas questões**, com os mesmos prompts, regras e limites de tempo do app: é exatamente o que a criança veria.
+2. **Enviar aos avaliadores** a pasta da rodada: a planilha `avaliacao-<código>.csv` (abre no Excel, no LibreOffice e no Google Planilhas) e o `LEIA-ME.txt`. A avaliação é **às cegas**: os itens vêm embaralhados, sem dizer de onde veio cada texto, e textos iguais entre condições viram um item só. **Não envie** o `gabarito-<código>.json`.
+3. **Importar** as planilhas preenchidas (uma por avaliador, com o nome no arquivo). O resultado sai na tela e num relatório HTML.
+
+Cada item recebe as notas de Monteiro et al.: **"Eu usaria em sala" (1–5)**, com aprovação = nota ≥ 4, **"Matemática correta" (S/N)**, **"Adequado ao 3º ano" (1–5)** e um comentário. O relatório mostra:
+
+- por condição, por tipo de texto e por habilidade: nota média e mediana, % de aprovação, % de matemática correta, adequação e quanto do que a criança veria veio de fato do modelo;
+- a **concordância entre avaliadores** (acordo unânime e kappa de Fleiss, com a leitura de Landis & Koch);
+- os itens com as notas mais baixas e aqueles em que os avaliadores mais discordaram, com os comentários.
+
+Para conclusões firmes, o artigo recomenda **pelo menos 50 questões por habilidade** e **de 3 a 5 avaliadores**.
+
+**O que a primeira rodada de teste já encontrou** (antes mesmo de ter professores):
+- no próprio código: "8 balões em cada canteiro" e "peixes em cada cercado" (item e recipiente eram sorteados separados; agora cada item tem os seus), "peixes arrumados em fileiras", e uma dica de divisão que usava *agrupar* ("faça grupos de 6") num problema de *repartir* ("dividir entre 6 amigos"), a mesma confusão que o artigo apontou nas questões de divisão;
+- no modelo: o Llama 3.2 3B leu "forma" (de assar) como "jeito de fazer", por isso o texto agora usa "assadeira".
 
 ## Benchmark e simulação de PC de escola
 
@@ -455,6 +476,12 @@ A direção é **clean, dinâmico e acolhedor, sem ser infantilizado**, com a se
 ---
 
 ## Changelog
+
+### Em desenvolvimento
+
+- **Modo de avaliação** (aba Avaliação): rodadas às cegas e pareadas para professores avaliarem enunciados e dicas de cada modelo e do código; importação das planilhas; relatório com aprovação, concordância (kappa de Fleiss) e itens críticos.
+- Temas com recipientes próprios de cada item; animais fora do template de fileiras; "assadeira" no lugar de "forma".
+- Dica de divisão que respeita o significado: repartir (distribuir entre N) ≠ medida (grupos de N).
 
 ### 1.1.0
 

@@ -1,5 +1,5 @@
 import type { Noun, QuestionTemplate, Rng, Theme } from '../types'
-import { na, numa, outra, pickNames, quantos } from '../themes'
+import { na, numa, outra, pickItemAndContainer, pickNames, quantos } from '../themes'
 import {
   additionPartHint,
   additionSteps,
@@ -67,8 +67,7 @@ function makeAddSub(spec: AddSubSpec): QuestionTemplate<PairParams> {
         b: p.b,
         n1,
         n2,
-        item: rng.pick(theme.items),
-        container: rng.pick(theme.containers),
+        ...pickItemAndContainer(theme, rng),
         theme
       })
     },

@@ -28,15 +28,20 @@ export interface Noun {
   feminine: boolean
 }
 
+/** Coisa que se conta, com os recipientes que fazem sentido para ela (peixe → aquário, ovo → caixa). */
+export interface ThemeItem extends Noun {
+  containers: Noun[]
+  /** false = não faz sentido "arrumar em fileiras" (peixes, pássaros...). */
+  rows?: boolean
+}
+
 export interface Theme {
   key: ThemeKey
   label: string
   /** Locução de lugar: "na feira", "no parque". */
   place: string
-  /** Coisas que se contam neste tema. */
-  items: Noun[]
-  /** Onde as coisas são agrupadas: caixas, cestas, pacotes. */
-  containers: Noun[]
+  /** Coisas que se contam neste tema, cada uma com os recipientes que combinam com ela. */
+  items: ThemeItem[]
 }
 
 export interface Rng {

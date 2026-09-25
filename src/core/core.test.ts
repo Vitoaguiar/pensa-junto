@@ -5,6 +5,8 @@ import { runTutor, type StreamEvent, type TextGenerator } from './tutor'
 import { tutorPrefixProblem, validateTutorText } from './validation'
 import { buildStatementPrompt, buildTutorSystem } from './prompts'
 import { generateQuestion } from './generator'
+import { THEMES } from './themes'
+import { divisionPartHint } from './templates/helpers'
 import type { Answer } from './types'
 
 describe('rng', () => {
@@ -178,5 +180,24 @@ describe('orçamento de tempo', () => {
     expect(Date.now() - t0).toBeLessThan(600)
     expect(r).toMatchObject({ source: 'fallback', fellBack: true })
     expect(r.problems).toContain('tempo esgotado')
+  })
+})
+
+describe('temas e dica de divisão (achados da 1ª rodada de avaliação)', () => {
+  it('todo item tem recipientes próprios (nada de "balões em cada canteiro")', () => {
+    for (const theme of THEMES) {
+      for (const it of theme.items) expect(it.containers.length, `${theme.key}/${it.plural}`).toBeGreaterThan(0)
+      // Todo tema precisa de pelo menos um item que possa ser arrumado em fileiras.
+      expect(theme.items.some((i) => i.rows !== false), theme.key).toBe(true)
+    }
+    const parque = THEMES.find((t) => t.key === 'parque')!
+    const baloes = parque.items.find((i) => i.plural === 'balões')!
+    expect(baloes.containers.map((c) => c.plural)).not.toContain('canteiros')
+  })
+
+  it('dica concreta de divisão respeita o significado: repartir ≠ medida', () => {
+    // 12 ÷ 6 = 2: nenhuma tentativa da tabuada é segura, então entra a atividade concreta.
+    expect(divisionPartHint(12, 6, 2, 0, 'repartir')).toMatch(/Desenhe 6 círculos, um para cada amigo/)
+    expect(divisionPartHint(12, 6, 2, 0, 'medida')).toMatch(/faça grupos de 6/)
   })
 })

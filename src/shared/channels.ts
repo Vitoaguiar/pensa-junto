@@ -2,6 +2,11 @@
 
 import type {
   AnswerInputDto,
+  EvaluationCreateOptionsDto,
+  EvaluationImportResultDto,
+  EvaluationProgressDto,
+  EvaluationReportDto,
+  EvaluationSetDto,
   AppStatusDto,
   ClassroomDto,
   DownloadProgressDto,
@@ -50,6 +55,14 @@ export interface IpcContract {
   'models:activate': { req: { modelId: string }; res: ModelsOverviewDto }
   'models:useBasicMode': { req: Void; res: ModelsOverviewDto }
 
+  'evaluation:list': { req: Void; res: EvaluationSetDto[] }
+  'evaluation:create': { req: EvaluationCreateOptionsDto; res: EvaluationSetDto }
+  'evaluation:cancel': { req: Void; res: true }
+  'evaluation:importRatings': { req: { code: string }; res: EvaluationImportResultDto | null }
+  'evaluation:report': { req: { code: string }; res: EvaluationReportDto }
+  'evaluation:openFolder': { req: { code: string }; res: true }
+  'evaluation:openReport': { req: { code: string }; res: true }
+
   'auth:verifyPin': { req: { pin: string }; res: VerifyPinResult }
   'auth:currentStudent': { req: Void; res: StudentPublicDto | null }
   'auth:logoutStudent': { req: Void; res: true }
@@ -88,6 +101,7 @@ export interface IpcContract {
 
 export interface IpcEvents {
   'models:onProgress': DownloadProgressDto
+  'evaluation:onProgress': EvaluationProgressDto
   'tutor:onToken': StreamEventDto
   'app:onStatus': AppStatusDto
 }
@@ -109,6 +123,13 @@ export const IPC_CHANNELS = [
   'models:test',
   'models:activate',
   'models:useBasicMode',
+  'evaluation:list',
+  'evaluation:create',
+  'evaluation:cancel',
+  'evaluation:importRatings',
+  'evaluation:report',
+  'evaluation:openFolder',
+  'evaluation:openReport',
   'auth:verifyPin',
   'auth:currentStudent',
   'auth:logoutStudent',
@@ -137,7 +158,7 @@ export const IPC_CHANNELS = [
   'tutor:chat'
 ] as const satisfies readonly IpcChannel[]
 
-export const IPC_EVENTS = ['models:onProgress', 'tutor:onToken', 'app:onStatus'] as const satisfies readonly IpcEvent[]
+export const IPC_EVENTS = ['models:onProgress', 'evaluation:onProgress', 'tutor:onToken', 'app:onStatus'] as const satisfies readonly IpcEvent[]
 
 /** Tudo que volta do main vem embrulhado, para a mensagem de erro chegar limpa ao renderer. */
 export type IpcResult<T> = { ok: true; data: T } | { ok: false; error: string }

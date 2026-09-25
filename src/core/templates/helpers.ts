@@ -109,8 +109,18 @@ export function multiplicationPartHint(groups: number, size: number): string {
   return `Conte de ${size} em ${size}, um salto para cada grupo: comece com ${size} e vá somando mais ${size} até dar ${groups} saltos.`
 }
 
-/** Dica nível 3 para divisão: uma tentativa da tabuada que não seja a resposta. */
-export function divisionPartHint(total: number, divisor: number, quotient: number, remainder = 0): string {
+/**
+ * Dica nível 3 para divisão: uma tentativa da tabuada que não seja a resposta. Sem tentativa segura,
+ * uma atividade concreta que respeita o SIGNIFICADO: repartir (distribuir entre N) é diferente de
+ * medida (fazer grupos de N). Misturar os dois é a confusão clássica em problemas de divisão.
+ */
+export function divisionPartHint(
+  total: number,
+  divisor: number,
+  quotient: number,
+  remainder = 0,
+  meaning: 'repartir' | 'medida' = 'medida'
+): string {
   const secret = [quotient, remainder]
   for (let k = 2; k <= 9; k++) {
     const product = k * divisor
@@ -118,5 +128,7 @@ export function divisionPartHint(total: number, divisor: number, quotient: numbe
       return `Tente um número: ${k} × ${divisor} = ${product}. Chegou em ${total}? Se ainda falta, tente um número maior.`
     }
   }
-  return `Desenhe ${total} bolinhas e faça grupos de ${divisor}. Depois conte quantos grupos você fez.`
+  return meaning === 'repartir'
+    ? `Desenhe ${divisor} círculos, um para cada amigo. Vá colocando as ${total} bolinhas, uma em cada círculo, até acabar. Quantas ficaram em cada círculo?`
+    : `Desenhe ${total} bolinhas e faça grupos de ${divisor}. Depois conte quantos grupos você fez.`
 }

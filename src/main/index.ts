@@ -1,9 +1,11 @@
+import fs from 'node:fs'
 import path from 'node:path'
 import { app, BrowserWindow, net, session, shell } from 'electron'
 import { openDatabase, type DbHandle } from './db/connection'
 import { createRepositories } from './db/repositories'
 import { seedBaseline, seedDemo } from './db/seed'
 import { registerIpc, sendEvent } from './ipc/handlers'
+import { EvaluationService } from './evaluation/evaluationService'
 import { formatBenchmark, runBenchmark } from './llm/benchmark'
 import { LlmService } from './llm/llmService'
 import { ModelManager } from './llm/modelManager'
@@ -137,6 +139,18 @@ async function start(): Promise<void> {
     return
   }
 
+  const evaluation = new EvaluationService({
+    baseDir: path.join(userData, 'avaliacoes'),
+    appVersion: app.getVersion(),
+    installedModels: () =>
+      repos.models
+        .list()
+        .filter((r) => r.status === 'ready' && fs.existsSync(r.filePath))
+        .map((r) => ({ id: r.id, name: r.displayName })),
+    generatorFor: (modelId) => llm!.generator('foreground', modelId),
+    emitProgress: (p) => sendEvent(mainWindow, 'evaluation:onProgress', p)
+  })
+
   const syncConfig = readSyncConfig(import.meta.env)
   const ipc = registerIpc({
     repos,
@@ -144,6 +158,7 @@ async function start(): Promise<void> {
     students,
     learning,
     models,
+    evaluation,
     llm,
     isDev,
     syncEnabled: !!syncConfig,

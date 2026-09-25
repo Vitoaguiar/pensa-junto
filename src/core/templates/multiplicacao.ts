@@ -1,5 +1,5 @@
 import type { QuestionTemplate, Rng } from '../types'
-import { pickNames, quantos } from '../themes'
+import { pickItemAndContainer, pickNames, quantos } from '../themes'
 import { distinctFromAnswer, drawUntil, int, multiplicationPartHint } from './helpers'
 
 // EF03MA07 — multiplicação por 2, 3, 4, 5 e 10: parcelas iguais e disposição retangular.
@@ -38,8 +38,7 @@ export const mulParcelasIguais: QuestionTemplate<GroupParams> = {
   expression: (p) => `${p.groups} × ${p.size}`,
   fallbackStatement(p, theme, rng) {
     const [n1] = pickNames(rng)
-    const item = rng.pick(theme.items)
-    const box = rng.pick(theme.containers)
+    const { item, container: box } = pickItemAndContainer(theme, rng)
     return `${n1} tem ${p.groups} ${box.plural}. Em cada ${box.singular} há ${p.size} ${item.plural}. ${quantos(item)} ${item.plural} há ao todo?`
   },
   fallbackHints: (p) => [
@@ -63,7 +62,7 @@ export const mulRetangular: QuestionTemplate<GroupParams> = {
   numbersInStatement: (p) => [p.groups, p.size],
   expression: (p) => `${p.groups} × ${p.size}`,
   fallbackStatement(p, theme, rng) {
-    const item = rng.pick(theme.items)
+    const item = rng.pick(theme.items.filter((i) => i.rows !== false))
     const place = theme.place.charAt(0).toUpperCase() + theme.place.slice(1)
     return `${place}, ${item.feminine ? 'as' : 'os'} ${item.plural} estão arrumad${item.feminine ? 'as' : 'os'} em ${p.groups} fileiras, com ${p.size} em cada fileira. ${quantos(item)} ${item.plural} há ao todo?`
   },

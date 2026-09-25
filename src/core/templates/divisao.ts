@@ -1,5 +1,5 @@
 import type { Answer, QuestionTemplate, Rng } from '../types'
-import { pickNames, quantos } from '../themes'
+import { pickItemAndContainer, pickNames, quantos } from '../themes'
 import { distinctFromAnswer, divisionPartHint, drawUntil, int } from './helpers'
 
 // EF03MA08 — divisão por números até 10: repartição equitativa e medida.
@@ -47,7 +47,7 @@ export const divRepartir: QuestionTemplate<DivParams> = {
   fallbackHints: (p) => [
     'Todo mundo tem que receber a mesma quantidade. Como você faria isso com objetos de verdade?',
     `Pense na tabuada do ${p.divisor}: qual número vezes ${p.divisor} dá ${p.total}?`,
-    divisionPartHint(p.total, p.divisor, quotientOf(p))
+    divisionPartHint(p.total, p.divisor, quotientOf(p), 0, 'repartir')
   ]
 }
 
@@ -65,14 +65,13 @@ export const divMedida: QuestionTemplate<DivParams> = {
   expression: (p) => `${p.total} ÷ ${p.divisor}`,
   fallbackStatement(p, theme, rng) {
     const [n1] = pickNames(rng)
-    const item = rng.pick(theme.items)
-    const box = rng.pick(theme.containers)
+    const { item, container: box } = pickItemAndContainer(theme, rng)
     return `${n1} tem ${p.total} ${item.plural} e vai colocar ${p.divisor} em cada ${box.singular}. ${quantos(box)} ${box.plural} vai usar?`
   },
   fallbackHints: (p) => [
     'Cada grupo tem sempre a mesma quantidade. O que a pergunta quer saber: o tamanho do grupo ou quantos grupos?',
     `Quantas vezes o ${p.divisor} cabe dentro do ${p.total}? Pense na tabuada do ${p.divisor}.`,
-    divisionPartHint(p.total, p.divisor, quotientOf(p))
+    divisionPartHint(p.total, p.divisor, quotientOf(p), 0, 'medida')
   ]
 }
 
@@ -108,6 +107,6 @@ export const divRepartirComResto: QuestionTemplate<DivParams> = {
   fallbackHints: (p) => [
     'Cada amigo recebe a mesma quantidade, e o que não dá para dividir sobra. Como você faria com objetos de verdade?',
     `Qual é o maior número da tabuada do ${p.divisor} que não passa de ${p.total}?`,
-    divisionPartHint(p.total, p.divisor, quotientOf(p), p.remainder)
+    divisionPartHint(p.total, p.divisor, quotientOf(p), p.remainder, 'repartir')
   ]
 }
