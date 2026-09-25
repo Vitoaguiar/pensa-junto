@@ -1,0 +1,9 @@
+node_modules/
+out/
+dist/
+.env
+*.db
+*.db-*
+test-results/
+playwright-report/
+models/

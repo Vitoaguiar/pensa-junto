@@ -1,0 +1,132 @@
+/*
+ * Design tokens do Pensa Junto.
+ * Contraste WCAG verificado (texto normal ≥ 4,5:1):
+ *   ink/bg 14,4 · ink-muted/bg 5,7 · ink-muted/surface-2 5,3 · branco/primary 5,5 · primary/primary-soft 4,6
+ *   hint-ink/hint-soft 6,8 · success-strong/success-soft 4,7 · ink/retry 5,6 · ink/retry-soft 13,1
+ *   ink/success 5,2 · ink/accent 6,4 · accent-ink/accent-soft 5,2 · danger/surface 5,0 · ink/lilac 4,6
+ * Pares que NÃO passam e não devem ser usados: branco sobre success (3,0), accent (2,4), lilac (3,3), retry.
+ */
+:root {
+  --bg: #f6f7fb;
+  --surface: #ffffff;
+  --surface-2: #edf0f8;
+  --border: #dde2ee;
+  --ink: #1e2240;
+  --ink-muted: #5b6180;
+
+  --primary: #4f5bd5;
+  --primary-strong: #3b45b0;
+  --primary-soft: #e7e9fc;
+
+  --accent: #14b8c4;
+  --accent-soft: #ddf6f8;
+  --accent-ink: #0b6f77; /* texto turquesa (turquesa puro não passa AA sobre branco) */
+
+  --hint: #ffb547;
+  --hint-soft: #fff3dd;
+  --hint-ink: #7a4b00;
+
+  --success: #1fa97a;
+  --success-strong: #0e7a56;
+  --success-soft: #ddf5ec;
+
+  --retry: #f07a5a;
+  --retry-soft: #fde8e2;
+
+  --danger: #c93c3c;
+  --lilac: #9b7be0;
+
+  --shadow: 0 4px 16px rgba(30, 34, 64, 0.08);
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --focus-ring: 0 0 0 3px var(--primary);
+
+  color-scheme: light;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: 'Lexend', system-ui, sans-serif;
+  font-size: 18px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+.tabular,
+input,
+.num {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Foco visível: anel de 3px em --primary, só para navegação por teclado. */
+:focus {
+  outline: none;
+}
+:focus-visible {
+  outline: 3px solid var(--primary);
+  outline-offset: 3px;
+}
+
+/* Barras de rolagem finas e discretas, no tom do "papel". */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::selection {
+  background: var(--primary-soft);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@media print {
+  body {
+    overflow: visible;
+    background: #fff;
+  }
+  .no-print {
+    display: none !important;
+  }
+}

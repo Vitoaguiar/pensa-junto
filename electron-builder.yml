@@ -1,0 +1,40 @@
+appId: br.org.pensajunto.app
+productName: Pensa Junto
+directories:
+  buildResources: build
+  output: dist
+files:
+  - out/**
+  - package.json
+  - '!**/*.{md,map,ts,tsx}'
+  - '!src/**'
+  - '!tests/**'
+  - '!supabase/**'
+  # CUDA (~520 MB) fica fora do instalador: PCs de escola raramente têm; a GPU é usada via Vulkan e há fallback em CPU.
+  - '!node_modules/@node-llama-cpp/*-cuda*/**'
+  - '!node_modules/@node-llama-cpp/win-arm64/**'
+  # Pacote git do llama.cpp (só serve para compilar na máquina, o que o app nunca faz: build 'never').
+  - '!node_modules/node-llama-cpp/llama/gitRelease.bundle'
+  - '!node_modules/better-sqlite3/{src,deps}/**'
+# Binários nativos não podem ser lidos de dentro do .asar.
+asarUnpack:
+  - node_modules/better-sqlite3/**
+  - node_modules/node-llama-cpp/**
+  - node_modules/@node-llama-cpp/**
+npmRebuild: false
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  artifactName: PensaJunto-Setup-${version}.${ext}
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: always
+  shortcutName: Pensa Junto
+  language: 1046
+linux:
+  target: [AppImage]
+  category: Education
+  artifactName: PensaJunto-${version}.${ext}
